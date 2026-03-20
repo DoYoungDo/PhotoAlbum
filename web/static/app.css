@@ -180,6 +180,17 @@ img { display: block; max-width: 100%; }
   margin-bottom: 8px;
   display: flex; align-items: center; gap: 8px;
 }
+.date-label .date-text { flex: 1; }
+.date-select-all {
+  display: none;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text2);
+  font-size: .74rem;
+}
+body.selection-mode .date-select-all { display: inline-flex; }
 
 /* 加载 */
 .load-more { text-align: center; padding: 24px 0; color: var(--text2); font-size: .88rem; }
@@ -252,7 +263,15 @@ img { display: block; max-width: 100%; }
   cursor: pointer;
 }
 .upload-zone.drag-over { border-color: var(--accent); background: rgba(45,106,95,.06); }
-.upload-queue { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+.upload-queue {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 40vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
 .upload-item {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 12px; background: var(--bg2); border-radius: 8px; font-size: .85rem;

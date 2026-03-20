@@ -319,7 +319,8 @@ function renderTimelineGroups(newPhotos, offset) {
     if (!group) {
       group = el('div', 'date-group');
       group.dataset.date = date;
-      group.innerHTML = `<div class="date-label">${date}</div><div class="photo-grid"></div>`;
+      group.innerHTML = `<div class="date-label"><span class="date-text">${date}</span><button class="date-select-all" type="button">全选本日</button></div><div class="photo-grid"></div>`;
+      group.querySelector('.date-select-all').addEventListener('click', () => selectAllInGroup(group));
       container.appendChild(group);
     }
     const grid = group.querySelector('.photo-grid');
@@ -419,12 +420,18 @@ async function hardDeleteSinglePhoto(photoId) {
 function toggleSelect(id, thumbEl) {
   if (state.selected.has(id)) { state.selected.delete(id); thumbEl.classList.remove('selected'); }
   else { state.selected.add(id); thumbEl.classList.add('selected'); }
+  updateSelectionModeUI();
   updateSelectionBar();
 }
 function clearSelection() {
   state.selected.clear();
   $$('.photo-thumb.selected').forEach(t => t.classList.remove('selected'));
+  updateSelectionModeUI();
   updateSelectionBar();
+  updateTrashSelBar();
+}
+function updateSelectionModeUI() {
+  document.body.classList.toggle('selection-mode', state.selected.size > 0);
 }
 function updateSelectionBar() {
   const bar = $('#sel-bar');
@@ -432,6 +439,19 @@ function updateSelectionBar() {
   bar.classList.toggle('visible', state.selected.size > 0);
   const cnt = $('#sel-count');
   if (cnt) cnt.textContent = state.selected.size;
+}
+function selectAllInGroup(groupEl) {
+  const thumbs = $$('.photo-thumb', groupEl);
+  thumbs.forEach(thumb => {
+    const id = Number(thumb.dataset.id);
+    if (!state.selected.has(id)) {
+      state.selected.add(id);
+      thumb.classList.add('selected');
+    }
+  });
+  updateSelectionModeUI();
+  updateSelectionBar();
+  updateTrashSelBar();
 }
 async function deleteSelected() {
   if (!state.selected.size) return;
@@ -498,7 +518,17 @@ async function openAlbumDetail(album) {
 async function renderAlbumDetail() {
   const album = state.currentAlbum;
   $('#topbar-title').textContent = album.name;
-  $('#topbar-actions').innerHTML = `<button class="btn btn-sm" id="back-albums-btn">← 返回相册</button>`;
+  $('#topbar-actions').innerHTML = `<button class="btn btn-danger btn-sm" id="delete-album-btn">删除相册</button><button class="btn btn-sm" id="back-albums-btn">← 返回相册</button>`;
+  $('#delete-album-btn').addEventListener('click', async () => {
+    if (!confirm(`确定要删除相册「${album.name}」吗？图片本身不会被删除。`)) return;
+    try {
+      await api.del(`/api/albums/${album.id}`);
+      state.currentAlbum = null;
+      switchView('albums');
+    } catch (e) {
+      alert('删除相册失败: ' + (e.error || e));
+    }
+  });
   $('#back-albums-btn').addEventListener('click', () => { state.view = 'albums'; renderAlbums(); });
 
   $('#content').innerHTML = `<div id="album-groups"></div><div class="load-more" id="load-more"><div class="spinner"></div>加载中…</div>`;
@@ -533,7 +563,8 @@ function renderAlbumGroups(newPhotos) {
     if (!group) {
       group = el('div', 'date-group');
       group.dataset.date = date;
-      group.innerHTML = `<div class="date-label">${date}</div><div class="photo-grid"></div>`;
+      group.innerHTML = `<div class="date-label"><span class="date-text">${date}</span><button class="date-select-all" type="button">全选本日</button></div><div class="photo-grid"></div>`;
+      group.querySelector('.date-select-all').addEventListener('click', () => selectAllInGroup(group));
       container.appendChild(group);
     }
     const grid = group.querySelector('.photo-grid');
@@ -593,7 +624,8 @@ function renderTrashGroups(newPhotos) {
     if (!group) {
       group = el('div', 'date-group');
       group.dataset.date = date;
-      group.innerHTML = `<div class="date-label">${date}</div><div class="photo-grid"></div>`;
+      group.innerHTML = `<div class="date-label"><span class="date-text">${date}</span><button class="date-select-all" type="button">全选本日</button></div><div class="photo-grid"></div>`;
+      group.querySelector('.date-select-all').addEventListener('click', () => selectAllInGroup(group));
       container.appendChild(group);
     }
     const grid = group.querySelector('.photo-grid');
@@ -628,6 +660,7 @@ function updateTrashSelBar() {
   bar.classList.toggle('visible', state.selected.size > 0);
   const cnt = $('#trash-sel-count');
   if (cnt) cnt.textContent = state.selected.size;
+  updateSelectionModeUI();
 }
 
 // c-5: 批量恢复选中图片

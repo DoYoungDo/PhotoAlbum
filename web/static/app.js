@@ -326,7 +326,7 @@ function renderTimelineGroups(newPhotos, offset) {
     if (!group) {
       group = el('div', 'date-group');
       group.dataset.date = date;
-      group.innerHTML = `<div class="date-label"><span class="date-text">${date}</span><button class="date-select-all" type="button">全选本日</button></div><div class="photo-grid"></div>`;
+      group.innerHTML = `<div class="date-label"><span class="date-text">${date}</span><button class="date-select-all" type="button">全选</button></div><div class="photo-grid"></div>`;
       group.querySelector('.date-select-all').addEventListener('click', () => selectAllInGroup(group));
       container.appendChild(group);
     }
@@ -609,7 +609,7 @@ function renderAlbumGroups(newPhotos) {
     if (!group) {
       group = el('div', 'date-group');
       group.dataset.date = date;
-      group.innerHTML = `<div class="date-label"><span class="date-text">${date}</span><button class="date-select-all" type="button">全选本日</button></div><div class="photo-grid"></div>`;
+      group.innerHTML = `<div class="date-label"><span class="date-text">${date}</span><button class="date-select-all" type="button">全选</button></div><div class="photo-grid"></div>`;
       group.querySelector('.date-select-all').addEventListener('click', () => selectAllInGroup(group));
       container.appendChild(group);
     }
@@ -670,7 +670,7 @@ function renderTrashGroups(newPhotos) {
     if (!group) {
       group = el('div', 'date-group');
       group.dataset.date = date;
-      group.innerHTML = `<div class="date-label"><span class="date-text">${date}</span><button class="date-select-all" type="button">全选本日</button></div><div class="photo-grid"></div>`;
+      group.innerHTML = `<div class="date-label"><span class="date-text">${date}</span><button class="date-select-all" type="button">全选</button></div><div class="photo-grid"></div>`;
       group.querySelector('.date-select-all').addEventListener('click', () => selectAllInGroup(group));
       container.appendChild(group);
     }

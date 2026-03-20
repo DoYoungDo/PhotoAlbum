@@ -792,7 +792,7 @@ function renderUploadModal() {
       ${icons.upload}
       <div style="margin-top:8px">拖拽照片到这里，或点击选择文件</div>
       <div style="font-size:.8rem;margin-top:4px">支持 JPG、PNG、GIF、WebP</div>
-      <input type="file" id="file-input" accept="image/*" multiple style="display:none">
+      <input type="file" id="file-input" accept="image/*" multiple aria-hidden="true">
     </div>
     <div class="upload-queue" id="upload-queue"></div>
     <div class="modal-footer">
@@ -819,7 +819,15 @@ function bindUploadZone() {
   const input = $('#file-input');
   $('#upload-close-btn').addEventListener('click', () => { closeUploadModal(); switchView('timeline'); });
   $('#retry-failed-btn').addEventListener('click', retryFailedUploads);
-  zone.addEventListener('click', e => { if (e.target !== input) input.click(); });
+  zone.addEventListener('click', e => {
+    if (e.target === input) return;
+    // 桌面浏览器对隐藏 input 的 click 更严格，优先使用 showPicker。
+    if (typeof input.showPicker === 'function') {
+      input.showPicker();
+    } else {
+      input.click();
+    }
+  });
   zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
   zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('drag-over'); handleFiles(e.dataTransfer.files); });

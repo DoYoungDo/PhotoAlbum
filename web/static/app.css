@@ -255,12 +255,20 @@ body.selection-mode .date-select-all { display: inline-flex; }
 
 /* ===== 上传 ===== */
 .upload-zone {
+  position: relative;
   border: 2px dashed var(--border);
   border-radius: var(--radius);
   padding: 36px 20px;
   text-align: center; color: var(--text2);
   transition: border-color .2s, background .2s;
   cursor: pointer;
+}
+.upload-zone input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 .upload-zone.drag-over { border-color: var(--accent); background: rgba(45,106,95,.06); }
 .upload-queue {

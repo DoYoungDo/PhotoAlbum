@@ -1,6 +1,7 @@
 package server
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/json"
 	"image"
@@ -376,6 +377,89 @@ func TestDownloadPhoto_NotFound(t *testing.T) {
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("期望 404，得到 %d", w.Code)
 	}
+}
+
+func TestDownloadPhotos_ZipSuccessAndDeduplicateNames(t *testing.T) {
+	s := newTestServer(t)
+	newReq := withAuth(t, s)
+
+	uploadSameName := func() int64 {
+		var body bytes.Buffer
+		mw := multipart.NewWriter(&body)
+		part, err := mw.CreateFormFile("photo", "same.jpg")
+		if err != nil {
+			t.Fatalf("创建 multipart 失败: %v", err)
+		}
+		_, _ = part.Write(createTestJPEGBytes(32, 32))
+		_ = mw.WriteField("client_last_modified_ms", strconv.FormatInt(time.Now().UnixMilli(), 10))
+		_ = mw.Close()
+
+		req := newReq(http.MethodPost, "/api/photos/upload", body.Bytes())
+		req.Header.Set("Content-Type", mw.FormDataContentType())
+		rec := httptest.NewRecorder()
+		s.ServeHTTP(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("上传期望 201，得到 %d，body=%s", rec.Code, rec.Body.String())
+		}
+		var photo struct {
+			ID int64 `json:"id"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &photo); err != nil {
+			t.Fatalf("解析上传响应失败: %v", err)
+		}
+		return photo.ID
+	}
+
+	id1 := uploadSameName()
+	id2 := uploadSameName()
+
+	body, _ := json.Marshal(map[string]any{"photo_ids": []int64{id1, id2}})
+	req := newReq(http.MethodPost, "/api/photos/download", body)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("批量下载期望 200，得到 %d，body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/zip" {
+		t.Fatalf("Content-Type 期望 application/zip，得到 %q", got)
+	}
+
+	zr, err := zip.NewReader(bytes.NewReader(rec.Body.Bytes()), int64(rec.Body.Len()))
+	if err != nil {
+		t.Fatalf("解析 zip 失败: %v", err)
+	}
+	if len(zr.File) != 2 {
+		t.Fatalf("zip 中文件数期望 2，得到 %d", len(zr.File))
+	}
+	names := []string{zr.File[0].Name, zr.File[1].Name}
+	if !(containsString(names, "same.jpg") && containsString(names, "same (2).jpg")) {
+		t.Fatalf("zip 内文件名不正确: %+v", names)
+	}
+
+	time.Sleep(50 * time.Millisecond)
+}
+
+func TestDownloadPhotos_EmptyRequest(t *testing.T) {
+	s := newTestServer(t)
+	newReq := withAuth(t, s)
+	body, _ := json.Marshal(map[string]any{"photo_ids": []int64{}})
+	req := newReq(http.MethodPost, "/api/photos/download", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("期望 400，得到 %d", w.Code)
+	}
+}
+
+func containsString(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
 }
 
 func TestDeletePhoto_NotFound(t *testing.T) {

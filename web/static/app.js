@@ -277,6 +277,7 @@ async function renderTimeline() {
 <div class="toolbar">
   <span id="sel-bar" class="selected-bar">
     <span class="selected-count" id="sel-count">0</span> 张已选
+    <button class="btn btn-sm" style="background:rgba(255,255,255,.2);border-color:transparent;color:#fff" id="download-sel-btn">下载选中</button>
     <button class="btn btn-sm" style="background:rgba(255,255,255,.2);border-color:transparent;color:#fff" id="add-to-album-btn">${icons.album} 添加到相册</button>
     <button class="btn btn-sm" style="background:rgba(255,255,255,.2);border-color:transparent;color:#fff" id="delete-sel-btn">${icons.trash} 删除</button>
     <button class="btn-icon" style="color:#fff" id="clear-sel-btn">${icons.close}</button>
@@ -286,6 +287,7 @@ async function renderTimeline() {
 <div class="load-more" id="load-more"><div class="spinner"></div>加载中…</div>`;
 
   $('#clear-sel-btn').addEventListener('click', clearSelection);
+  $('#download-sel-btn').addEventListener('click', downloadSelected);
   $('#delete-sel-btn').addEventListener('click', deleteSelected);
   $('#add-to-album-btn').addEventListener('click', () => openAlbumPickerModal(null));
 
@@ -555,7 +557,21 @@ async function renderAlbumDetail() {
   });
   $('#back-albums-btn').addEventListener('click', () => switchView('albums'));
 
-  $('#content').innerHTML = `<div id="album-groups"></div><div class="load-more" id="load-more"><div class="spinner"></div>加载中…</div>`;
+  $('#content').innerHTML = `
+<div class="toolbar">
+  <span id="sel-bar" class="selected-bar">
+    <span class="selected-count" id="sel-count">0</span> 张已选
+    <button class="btn btn-sm" style="background:rgba(255,255,255,.2);border-color:transparent;color:#fff" id="download-sel-btn">下载选中</button>
+    <button class="btn btn-sm" style="background:rgba(255,255,255,.2);border-color:transparent;color:#fff" id="add-to-album-btn">${icons.album} 添加到相册</button>
+    <button class="btn btn-sm" style="background:rgba(255,255,255,.2);border-color:transparent;color:#fff" id="delete-sel-btn">${icons.trash} 删除</button>
+    <button class="btn-icon" style="color:#fff" id="clear-sel-btn">${icons.close}</button>
+  </span>
+</div>
+<div id="album-groups"></div><div class="load-more" id="load-more"><div class="spinner"></div>加载中…</div>`;
+  $('#clear-sel-btn').addEventListener('click', clearSelection);
+  $('#download-sel-btn').addEventListener('click', downloadSelected);
+  $('#delete-sel-btn').addEventListener('click', deleteSelected);
+  $('#add-to-album-btn').addEventListener('click', () => openAlbumPickerModal(null));
   state.albumPhotos = []; state.albumCursor = ''; state.albumHasMore = true;
   await loadMoreAlbumPhotos();
   observeLoadMore('load-more', loadMoreAlbumPhotos, () => state.albumHasMore && !state.albumLoading);
@@ -795,10 +811,44 @@ function triggerDownload(url) {
 	a.remove();
 }
 
+async function triggerPostDownload(url, payload, fallbackName) {
+	const res = await fetch(url, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify(payload),
+	});
+	if (!res.ok) {
+		throw await res.json();
+	}
+	const blob = await res.blob();
+	const objectURL = URL.createObjectURL(blob);
+	const a = document.createElement('a');
+	const disposition = res.headers.get('Content-Disposition') || '';
+	const match = disposition.match(/filename\*=UTF-8''([^;]+)/);
+	a.href = objectURL;
+	a.download = match ? decodeURIComponent(match[1]) : fallbackName;
+	a.style.display = 'none';
+	document.body.appendChild(a);
+	a.click();
+	a.remove();
+	setTimeout(() => URL.revokeObjectURL(objectURL), 1000);
+}
+
 function downloadCurrentPhoto() {
 	const p = state.lightboxPhotos[state.lightboxIndex];
 	if (!p) return;
 	triggerDownload(`/api/photos/${p.id}/download`);
+}
+
+async function downloadSelected() {
+	if (!state.selected.size) return;
+	try {
+		await triggerPostDownload('/api/photos/download', {
+			photo_ids: [...state.selected],
+		}, `photoalbum-selection-${Date.now()}.zip`);
+	} catch (e) {
+		alert('下载失败: ' + (e.error || e));
+	}
 }
 
 // ── 上传模态框 ────────────────────────────────────────

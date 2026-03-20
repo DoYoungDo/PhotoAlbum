@@ -26,6 +26,10 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
+type photoDownloadRequest struct {
+	PhotoIDs []int64 `json:"photo_ids"`
+}
+
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -200,6 +204,37 @@ func (s *Server) handleDownloadPhoto(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", photo.MimeType)
 	w.Header().Set("Content-Disposition", contentDispositionAttachment(photo.OriginalName))
 	http.ServeFile(w, r, s.photoService.PhotoPath(photo))
+}
+
+func (s *Server) handleDownloadPhotos(w http.ResponseWriter, r *http.Request) {
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
+		return
+	}
+
+	var req photoDownloadRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "无效的请求体")
+		return
+	}
+	if len(req.PhotoIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "photo_ids 不能为空")
+		return
+	}
+
+	entries, err := s.photoService.GetDownloadEntries(req.PhotoIDs, userID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	zipName := time.Now().Format("photoalbum-selection-20060102-150405.zip")
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", contentDispositionAttachment(zipName))
+	if err := writeZipResponse(w, entries); err != nil {
+		writeError(w, http.StatusInternalServerError, "打包下载失败")
+		return
+	}
 }
 
 func (s *Server) handleDeletePhoto(w http.ResponseWriter, r *http.Request) {

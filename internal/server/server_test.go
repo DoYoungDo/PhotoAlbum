@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"image"
 	"image/jpeg"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
+	"time"
 
 	"photoalbum/internal/config"
 	"photoalbum/internal/service"
@@ -254,6 +257,62 @@ func TestListPhotos_Empty(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("期望 200，得到 %d，body=%s", w.Code, w.Body.String())
 	}
+}
+
+func TestParseClientLastModified(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/photos/upload", nil)
+	req.Form = map[string][]string{
+		"client_last_modified_ms": {"1710403200000"},
+	}
+	got := parseClientLastModified(req)
+	if got.IsZero() {
+		t.Fatal("期望解析出有效时间")
+	}
+	if got.UnixMilli() != 1710403200000 {
+		t.Fatalf("期望 1710403200000，得到 %d", got.UnixMilli())
+	}
+}
+
+func TestHandleUploadPhoto_UsesClientLastModifiedFallback(t *testing.T) {
+	s := newTestServer(t)
+	newReq := withAuth(t, s)
+
+	var body bytes.Buffer
+	w := multipart.NewWriter(&body)
+	part, err := w.CreateFormFile("photo", "test.jpg")
+	if err != nil {
+		t.Fatalf("创建 multipart 失败: %v", err)
+	}
+	_, _ = part.Write(createTestJPEGBytes(100, 100))
+	clientMS := time.Date(2024, 3, 14, 12, 0, 0, 0, time.UTC).UnixMilli()
+	_ = w.WriteField("client_last_modified_ms", strconv.FormatInt(clientMS, 10))
+	_ = w.Close()
+
+	req := newReq(http.MethodPost, "/api/photos/upload", body.Bytes())
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	rec := httptest.NewRecorder()
+	s.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("期望 201，得到 %d，body=%s", rec.Code, rec.Body.String())
+	}
+
+	// 读取返回的图片对象，验证 taken_at 使用了客户端时间
+	var photo struct {
+		TakenAt string `json:"taken_at"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &photo); err != nil {
+		t.Fatalf("解析响应失败: %v", err)
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, photo.TakenAt)
+	if err != nil {
+		t.Fatalf("解析 taken_at 失败: %v", err)
+	}
+	if parsed.UnixMilli() != clientMS {
+		t.Fatalf("期望 taken_at=%d，得到 %d", clientMS, parsed.UnixMilli())
+	}
+
+	// 上传后缩略图在后台 goroutine 生成，稍等片刻避免 TempDir 清理与后台写入竞争。
+	time.Sleep(50 * time.Millisecond)
 }
 
 func TestDeletePhoto_NotFound(t *testing.T) {

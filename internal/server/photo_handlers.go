@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -87,6 +88,18 @@ func readUploadedFile(file multipart.File) ([]byte, error) {
 	return io.ReadAll(file)
 }
 
+func parseClientLastModified(r *http.Request) time.Time {
+	value := strings.TrimSpace(r.FormValue("client_last_modified_ms"))
+	if value == "" {
+		return time.Time{}
+	}
+	ms, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || ms <= 0 {
+		return time.Time{}
+	}
+	return time.UnixMilli(ms)
+}
+
 func (s *Server) handleUploadPhoto(w http.ResponseWriter, r *http.Request) {
 	userID := s.mustUserID(w, r)
 	if userID == 0 {
@@ -115,7 +128,12 @@ func (s *Server) handleUploadPhoto(w http.ResponseWriter, r *http.Request) {
 		OriginalName: header.Filename,
 		Size:         int64(len(data)),
 		UploadedBy:   userID,
-		FileModTime:  time.Now(),
+		FileModTime: func() time.Time {
+			if t := parseClientLastModified(r); !t.IsZero() {
+				return t
+			}
+			return time.Now()
+		}(),
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

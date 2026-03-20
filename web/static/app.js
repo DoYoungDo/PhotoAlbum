@@ -845,6 +845,10 @@ async function uploadFile(file, id, job) {
   if (stat) { stat.textContent = '上传中'; stat.className = 'up-status'; }
   const fd = new FormData();
   fd.append('photo', file);
+  // 传递浏览器 File 对象的本地最后修改时间，供后端在无 EXIF 时作为回退时间。
+  if (file.lastModified) {
+    fd.append('client_last_modified_ms', String(file.lastModified));
+  }
   try {
     await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();

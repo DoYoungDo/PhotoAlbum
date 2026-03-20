@@ -389,6 +389,7 @@ function showPhotoContextMenu(x, y, photo, thumbEl, listRef) {
   showContextMenu(x, y, [
     { label: isSelected ? '取消选择' : '选择（点击勾选图标可快速选择）', action: () => toggleSelect(photo.id, thumbEl) },
     { label: '查看', action: () => openLightbox(listRef, listRef.indexOf(photo)) },
+    { label: '下载', action: () => triggerDownload(`/api/photos/${photo.id}/download`) },
     '-',
     { label: '添加到相册…', action: () => openAlbumPickerModal([photo.id]) },
     { label: isShared ? '管理分享…' : '分享…', action: () => isShared ? openShareListModal('photo', photo.id) : openShareModal('photo', photo.id) },
@@ -719,6 +720,7 @@ function renderLightbox() {
   return `<div class="lightbox" id="lightbox">
   <div class="lightbox-header">
     <span class="lb-title" id="lb-title"></span>
+    <button class="btn-icon" style="color:#ccc" id="lb-download">下载</button>
     <button class="btn-icon" style="color:#ccc" id="lb-share">${icons.share}</button>
     <button class="btn-icon" style="color:#ccc" id="lb-close">${icons.close}</button>
   </div>
@@ -743,6 +745,7 @@ function bindGlobal() {
     if (e.target.closest('#lb-close')) closeLightbox();
     if (e.target.closest('#lb-prev'))  lbNav(-1);
     if (e.target.closest('#lb-next'))  lbNav(1);
+    if (e.target.closest('#lb-download')) downloadCurrentPhoto();
     if (e.target.closest('#lb-share')) lbShare();
   });
 }
@@ -781,6 +784,21 @@ async function lbShare() {
   const isShared = !!state.shareMap[`photo:${p.id}`];
   if (isShared) openShareListModal('photo', p.id);
   else openShareModal('photo', p.id);
+}
+
+function triggerDownload(url) {
+	const a = document.createElement('a');
+	a.href = url;
+	a.style.display = 'none';
+	document.body.appendChild(a);
+	a.click();
+	a.remove();
+}
+
+function downloadCurrentPhoto() {
+	const p = state.lightboxPhotos[state.lightboxIndex];
+	if (!p) return;
+	triggerDownload(`/api/photos/${p.id}/download`);
 }
 
 // ── 上传模态框 ────────────────────────────────────────

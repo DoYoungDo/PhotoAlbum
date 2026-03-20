@@ -3,9 +3,11 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -163,6 +165,41 @@ func (s *Server) handleGetPhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, photo)
+}
+
+func contentDispositionAttachment(filename string) string {
+	trimmed := strings.ReplaceAll(filename, "\"", "")
+	trimmed = strings.ReplaceAll(trimmed, "\n", "")
+	trimmed = strings.ReplaceAll(trimmed, "\r", "")
+	if trimmed == "" {
+		trimmed = "download"
+	}
+	return fmt.Sprintf("attachment; filename=%q; filename*=UTF-8''%s", trimmed, url.PathEscape(trimmed))
+}
+
+func (s *Server) handleDownloadPhoto(w http.ResponseWriter, r *http.Request) {
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
+		return
+	}
+	id, err := parseInt64Param(r.PathValue("id"), "图片ID")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	photo, err := s.photoService.GetPhoto(id, userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if photo == nil {
+		writeError(w, http.StatusNotFound, "图片不存在")
+		return
+	}
+
+	w.Header().Set("Content-Type", photo.MimeType)
+	w.Header().Set("Content-Disposition", contentDispositionAttachment(photo.OriginalName))
+	http.ServeFile(w, r, s.photoService.PhotoPath(photo))
 }
 
 func (s *Server) handleDeletePhoto(w http.ResponseWriter, r *http.Request) {

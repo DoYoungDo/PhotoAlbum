@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -313,6 +314,68 @@ func TestHandleUploadPhoto_UsesClientLastModifiedFallback(t *testing.T) {
 
 	// 上传后缩略图在后台 goroutine 生成，稍等片刻避免 TempDir 清理与后台写入竞争。
 	time.Sleep(50 * time.Millisecond)
+}
+
+func TestDownloadPhoto_Success(t *testing.T) {
+	s := newTestServer(t)
+	newReq := withAuth(t, s)
+
+	// 先上传一张图片
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	part, err := mw.CreateFormFile("photo", "下载测试.jpg")
+	if err != nil {
+		t.Fatalf("创建 multipart 失败: %v", err)
+	}
+	imgBytes := createTestJPEGBytes(64, 64)
+	_, _ = part.Write(imgBytes)
+	_ = mw.WriteField("client_last_modified_ms", strconv.FormatInt(time.Now().UnixMilli(), 10))
+	_ = mw.Close()
+
+	uploadReq := newReq(http.MethodPost, "/api/photos/upload", body.Bytes())
+	uploadReq.Header.Set("Content-Type", mw.FormDataContentType())
+	uploadRec := httptest.NewRecorder()
+	s.ServeHTTP(uploadRec, uploadReq)
+	if uploadRec.Code != http.StatusCreated {
+		t.Fatalf("上传期望 201，得到 %d，body=%s", uploadRec.Code, uploadRec.Body.String())
+	}
+
+	var photo struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal(uploadRec.Body.Bytes(), &photo); err != nil {
+		t.Fatalf("解析上传响应失败: %v", err)
+	}
+
+	// 再下载图片
+	downloadReq := newReq(http.MethodGet, "/api/photos/"+strconv.FormatInt(photo.ID, 10)+"/download", nil)
+	downloadRec := httptest.NewRecorder()
+	s.ServeHTTP(downloadRec, downloadReq)
+	if downloadRec.Code != http.StatusOK {
+		t.Fatalf("下载期望 200，得到 %d，body=%s", downloadRec.Code, downloadRec.Body.String())
+	}
+	if got := downloadRec.Header().Get("Content-Disposition"); !strings.Contains(got, "attachment;") || !strings.Contains(got, "filename*") {
+		t.Fatalf("Content-Disposition 不正确: %q", got)
+	}
+	if got := downloadRec.Header().Get("Content-Type"); got != "image/jpeg" {
+		t.Fatalf("Content-Type 期望 image/jpeg，得到 %q", got)
+	}
+	if len(downloadRec.Body.Bytes()) == 0 {
+		t.Fatal("下载内容不能为空")
+	}
+
+	time.Sleep(50 * time.Millisecond)
+}
+
+func TestDownloadPhoto_NotFound(t *testing.T) {
+	s := newTestServer(t)
+	newReq := withAuth(t, s)
+	req := newReq(http.MethodGet, "/api/photos/9999/download", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("期望 404，得到 %d", w.Code)
+	}
 }
 
 func TestDeletePhoto_NotFound(t *testing.T) {

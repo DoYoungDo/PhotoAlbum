@@ -608,6 +608,76 @@ func TestCreateShare_API(t *testing.T) {
 	}
 }
 
+func TestDownloadSharedPhoto_Success(t *testing.T) {
+	s := newTestServer(t)
+	newReq := withAuth(t, s)
+
+	// 上传图片
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	part, err := mw.CreateFormFile("photo", "shared.jpg")
+	if err != nil {
+		t.Fatalf("创建 multipart 失败: %v", err)
+	}
+	_, _ = part.Write(createTestJPEGBytes(40, 40))
+	_ = mw.Close()
+	uploadReq := newReq(http.MethodPost, "/api/photos/upload", body.Bytes())
+	uploadReq.Header.Set("Content-Type", mw.FormDataContentType())
+	uploadRec := httptest.NewRecorder()
+	s.ServeHTTP(uploadRec, uploadReq)
+	if uploadRec.Code != http.StatusCreated {
+		t.Fatalf("上传期望 201，得到 %d，body=%s", uploadRec.Code, uploadRec.Body.String())
+	}
+	var photo struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal(uploadRec.Body.Bytes(), &photo); err != nil {
+		t.Fatalf("解析图片响应失败: %v", err)
+	}
+
+	// 创建分享链接
+	shareBody, _ := json.Marshal(map[string]any{"type": "photo", "target_id": photo.ID})
+	shareReq := newReq(http.MethodPost, "/api/shares", shareBody)
+	shareReq.Header.Set("Content-Type", "application/json")
+	shareRec := httptest.NewRecorder()
+	s.ServeHTTP(shareRec, shareReq)
+	if shareRec.Code != http.StatusCreated {
+		t.Fatalf("创建分享期望 201，得到 %d，body=%s", shareRec.Code, shareRec.Body.String())
+	}
+	var link struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(shareRec.Body.Bytes(), &link); err != nil {
+		t.Fatalf("解析分享响应失败: %v", err)
+	}
+
+	// 匿名下载分享图片
+	downloadReq := httptest.NewRequest(http.MethodGet, "/s/"+link.Token+"/download", nil)
+	downloadRec := httptest.NewRecorder()
+	s.ServeHTTP(downloadRec, downloadReq)
+	if downloadRec.Code != http.StatusOK {
+		t.Fatalf("分享下载期望 200，得到 %d，body=%s", downloadRec.Code, downloadRec.Body.String())
+	}
+	if got := downloadRec.Header().Get("Content-Disposition"); !strings.Contains(got, "attachment;") {
+		t.Fatalf("Content-Disposition 不正确: %q", got)
+	}
+	if len(downloadRec.Body.Bytes()) == 0 {
+		t.Fatal("下载内容不能为空")
+	}
+
+	time.Sleep(50 * time.Millisecond)
+}
+
+func TestDownloadSharedPhoto_NotFound(t *testing.T) {
+	s := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/s/invalid-token/download", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("期望 404，得到 %d", w.Code)
+	}
+}
+
 func TestGetShare_NotFound(t *testing.T) {
 	s := newTestServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/api/s/nonexistent-token", nil)

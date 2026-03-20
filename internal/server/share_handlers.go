@@ -104,6 +104,26 @@ func (s *Server) handleServeSharedMedia(w http.ResponseWriter, r *http.Request) 
 	http.ServeFile(w, r, s.photoService.PhotoPath(photo))
 }
 
+func (s *Server) handleDownloadSharedPhoto(w http.ResponseWriter, r *http.Request) {
+	link, err := s.shareService.GetShareByToken(r.PathValue("token"))
+	if err != nil || link == nil {
+		writeError(w, http.StatusNotFound, "分享链接不存在或已过期")
+		return
+	}
+	if link.Type != storage.ShareTypePhoto {
+		writeError(w, http.StatusBadRequest, "当前分享不支持下载")
+		return
+	}
+	photo, err := s.photoService.GetPhoto(link.TargetID, link.CreatedBy)
+	if err != nil || photo == nil {
+		writeError(w, http.StatusNotFound, "图片不存在")
+		return
+	}
+	w.Header().Set("Content-Type", photo.MimeType)
+	w.Header().Set("Content-Disposition", contentDispositionAttachment(photo.OriginalName))
+	http.ServeFile(w, r, s.photoService.PhotoPath(photo))
+}
+
 // handleGetSharePhotos 获取分享相册中的图片列表（无需登录）
 func (s *Server) handleGetSharePhotos(w http.ResponseWriter, r *http.Request) {
 	link, err := s.shareService.GetShareByToken(r.PathValue("token"))

@@ -105,6 +105,7 @@ func (s *Server) registerRoutes() {
 
 	// ���享访问（无需登录）
 	s.mux.HandleFunc("GET /s/{token}", s.handleSharePage)
+	s.mux.HandleFunc("GET /s/{token}/download", s.handleDownloadSharedPhoto)
 	s.mux.HandleFunc("GET /api/s/{token}", s.handleGetShare)
 	s.mux.HandleFunc("GET /api/s/{token}/photos", s.handleGetSharePhotos)
 	s.mux.HandleFunc("GET /media/s/{token}/{uuid}", s.handleServeSharedMedia)

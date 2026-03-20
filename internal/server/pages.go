@@ -125,6 +125,7 @@ const shareTemplate = `<!doctype html>
       if (link.type === 'photo') {
         document.getElementById('share-title').textContent = '分享的照片';
         document.getElementById('share-content').innerHTML =
+          '<div style="margin-bottom:12px"><a class="btn btn-primary" href="/s/' + token + '/download">下载原图</a></div>' +
           '<img src="/media/s/' + token + '/' + link.target_id + '" style="max-width:100%;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.15)">';
       } else if (link.type === 'album') {
         document.getElementById('share-title').textContent = '分享的相册';

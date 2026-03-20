@@ -961,8 +961,17 @@ async function openAlbumPickerModal(photoIds) {
   _pickerPhotoIds = photoIds;
   _pickerSelected = null;
   const modal = $('#album-picker-modal');
+  const cancelBtn = $('#album-picker-cancel');
+  const confirmBtn = $('#album-picker-confirm');
   modal.classList.add('open');
   $('#album-picker-hint').textContent = '';
+
+  // 无论后续加载结果如何，都先绑定好按钮，避免“无相册时只能刷新”的死状态。
+  cancelBtn.disabled = false;
+  cancelBtn.onclick = () => modal.classList.remove('open');
+  confirmBtn.disabled = false;
+  confirmBtn.textContent = '添加';
+  confirmBtn.onclick = confirmAlbumPicker;
 
   const grid = $('#album-picker-grid');
   grid.innerHTML = '<div style="padding:16px;color:var(--text2)">加载中…</div>';
@@ -971,6 +980,12 @@ async function openAlbumPickerModal(photoIds) {
     const albums = await api.get('/api/albums');
     if (!albums || !albums.length) {
       grid.innerHTML = `<div style="padding:16px;color:var(--text2)">还没有相册，请先新建相册</div>`;
+      $('#album-picker-hint').textContent = '你可以直接在当前弹窗里去创建相册。';
+      confirmBtn.textContent = '去创建相册';
+      confirmBtn.onclick = () => {
+        modal.classList.remove('open');
+        openCreateAlbumModal();
+      };
       return;
     }
     grid.innerHTML = '';
@@ -986,8 +1001,6 @@ async function openAlbumPickerModal(photoIds) {
     });
   } catch(e) { grid.innerHTML = `<div style="color:var(--danger)">加载失败</div>`; }
 
-  $('#album-picker-cancel').onclick = () => modal.classList.remove('open');
-  $('#album-picker-confirm').onclick = confirmAlbumPicker;
 }
 
 async function confirmAlbumPicker() {

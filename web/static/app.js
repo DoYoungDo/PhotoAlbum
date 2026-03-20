@@ -544,7 +544,8 @@ async function renderAlbumDetail() {
     return;
   }
   $('#topbar-title').textContent = album.name;
-  $('#topbar-actions').innerHTML = `<button class="btn btn-danger btn-sm" id="delete-album-btn">删除相册</button><button class="btn btn-sm" id="back-albums-btn">← 返回相册</button>`;
+  $('#topbar-actions').innerHTML = `<button class="btn btn-sm" id="download-album-btn">下载相册</button><button class="btn btn-danger btn-sm" id="delete-album-btn">删除相册</button><button class="btn btn-sm" id="back-albums-btn">← 返回相册</button>`;
+  $('#download-album-btn').addEventListener('click', () => triggerDownload(`/api/albums/${album.id}/download`));
   $('#delete-album-btn').addEventListener('click', async () => {
     if (!confirm(`确定要删除相册「${album.name}」吗？图片本身不会被删除。`)) return;
     try {

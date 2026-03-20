@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"photoalbum/internal/storage"
 )
@@ -68,6 +69,38 @@ func (s *Server) handleGetAlbum(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, album)
+}
+
+func sanitizeZipName(name string) string {
+	replacer := strings.NewReplacer("/", "-", "\\", "-", ":", "-", "*", "-", "?", "-", "\"", "", "<", "-", ">", "-", "|", "-")
+	cleaned := strings.TrimSpace(replacer.Replace(name))
+	if cleaned == "" {
+		cleaned = "album"
+	}
+	return cleaned + ".zip"
+}
+
+func (s *Server) handleDownloadAlbum(w http.ResponseWriter, r *http.Request) {
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
+		return
+	}
+	id, err := parseInt64Param(r.PathValue("id"), "相册ID")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	albumName, entries, err := s.albumService.GetAlbumDownloadEntries(id, userID, s.photoService)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", contentDispositionAttachment(sanitizeZipName(albumName)))
+	if err := writeZipResponse(w, entries); err != nil {
+		writeError(w, http.StatusInternalServerError, "打包下载失败")
+		return
+	}
 }
 
 func (s *Server) handleUpdateAlbum(w http.ResponseWriter, r *http.Request) {

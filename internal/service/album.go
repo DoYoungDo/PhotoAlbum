@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"photoalbum/internal/storage"
@@ -108,4 +109,41 @@ func (s *AlbumService) GetCoverPhoto(album *storage.Album) (*storage.Photo, erro
 		return nil, err
 	}
 	return page.Photos[0], nil
+}
+
+// GetAlbumDownloadEntries 获取整个相册的下载条目，按当前相册中的未删除图片构建。
+func (s *AlbumService) GetAlbumDownloadEntries(albumID int64, userID int64, photoService *PhotoService) (string, []DownloadEntry, error) {
+	album, err := s.repo.GetAlbumByID(albumID, userID)
+	if err != nil {
+		return "", nil, err
+	}
+	if album == nil {
+		return "", nil, fmt.Errorf("相册不存在")
+	}
+
+	page, err := s.repo.ListAlbumPhotos(storage.ListAlbumPhotosParams{
+		AlbumID: albumID,
+		UserID:  userID,
+		Limit:   10000,
+	})
+	if err != nil {
+		return "", nil, err
+	}
+
+	entries := make([]DownloadEntry, 0, len(page.Photos))
+	usedNames := map[string]int{}
+	for _, photo := range page.Photos {
+		name := makeUniqueDownloadName(photo.OriginalName, usedNames)
+		entries = append(entries, DownloadEntry{
+			FileName: name,
+			Path:     photoService.PhotoPath(photo),
+			MimeType: photo.MimeType,
+		})
+	}
+
+	albumName := strings.TrimSpace(album.Name)
+	if albumName == "" {
+		albumName = "album"
+	}
+	return albumName, entries, nil
 }

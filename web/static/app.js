@@ -53,6 +53,21 @@ function groupByDate(photos) {
 let _uid = 0;
 function uid() { return 'u' + (++_uid); }
 
+// c-3: 长按检测（移动端操作菜单）
+function addLongPress(el, callback, delay = 500) {
+  let timer = null;
+  let moved = false;
+  el.addEventListener('touchstart', e => {
+    moved = false;
+    timer = setTimeout(() => {
+      if (!moved) { e.preventDefault(); callback(e); }
+    }, delay);
+  }, { passive: false });
+  el.addEventListener('touchmove',  () => { moved = true; clearTimeout(timer); });
+  el.addEventListener('touchend',   () => clearTimeout(timer));
+  el.addEventListener('touchcancel',() => clearTimeout(timer));
+}
+
 // ── SVG 图标 ──────────────────────────────────────────
 const icons = {
   timeline: `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`,
@@ -231,6 +246,7 @@ function closeDrawer() {
 function switchView(view) {
   state.view = view;
   state.selected.clear();
+  setHashView(view); // c-2: 同步到 hash
   $$('.nav-item[data-view]').forEach(a => a.classList.toggle('active', a.dataset.view === view));
   renderView();
 }
@@ -310,11 +326,9 @@ function renderTimelineGroups(newPhotos, offset) {
 
 // ── 缩略图 ────────────────────────────────────────────
 function makePhotoThumb(photo, listRef, opts = {}) {
-  // opts.trashMode: 回收站模式，点击预览，不进入选择模式
   const div = el('div', 'photo-thumb');
   div.dataset.id = photo.id;
 
-  // b-2: 分享徽章
   const isShared = !!state.shareMap[`photo:${photo.id}`];
   const shareBadge = isShared
     ? `<span class="share-badge">${icons.shareSmall}</span>` : '';
@@ -329,9 +343,8 @@ function makePhotoThumb(photo, listRef, opts = {}) {
   });
 
   // 图片主体点击
-  div.addEventListener('click', e => {
+  div.addEventListener('click', () => {
     if (opts.trashMode) {
-      // b-4: 回收站模式只打开预览
       openLightbox(listRef, listRef.indexOf(photo));
       return;
     }
@@ -342,14 +355,18 @@ function makePhotoThumb(photo, listRef, opts = {}) {
     }
   });
 
-  // 右键菜单
+  // PC 右键菜单
   div.addEventListener('contextmenu', e => {
     e.preventDefault();
-    if (opts.trashMode) {
-      showTrashContextMenu(e.clientX, e.clientY, photo);
-    } else {
-      showPhotoContextMenu(e.clientX, e.clientY, photo, div, listRef);
-    }
+    if (opts.trashMode) showTrashContextMenu(e.clientX, e.clientY, photo);
+    else showPhotoContextMenu(e.clientX, e.clientY, photo, div, listRef);
+  });
+
+  // c-3: 长按触发操作菜单（移动端）
+  addLongPress(div, e => {
+    const touch = e.changedTouches[0];
+    if (opts.trashMode) showTrashContextMenu(touch.clientX, touch.clientY, photo);
+    else showPhotoContextMenu(touch.clientX, touch.clientY, photo, div, listRef);
   });
 
   if (state.selected.has(photo.id)) div.classList.add('selected');
@@ -451,7 +468,10 @@ function renderAlbumGrid() {
 
 function makeAlbumCard(album) {
   const card = el('div', 'album-card');
-  const coverHtml = `<div class="album-cover-empty">${icons.photo}</div>`;
+  // c-1: 用 cover_uuid 显示封面缩略图
+  const coverHtml = album.cover_uuid
+    ? `<img loading="lazy" src="/media/thumbnails/${album.cover_uuid}" alt="${album.name}">`
+    : `<div class="album-cover-empty">${icons.photo}</div>`;
   card.innerHTML = `
 <div class="album-cover">${coverHtml}</div>
 <div class="album-info">
@@ -524,10 +544,21 @@ async function renderTrash() {
   $('#topbar-actions').innerHTML = `<button class="btn btn-danger btn-sm" id="empty-trash-btn">${icons.trash} 清空回收站</button>`;
   $('#empty-trash-btn').addEventListener('click', emptyTrash);
 
+  // c-5: 加入批量恢复工具栏
   $('#content').innerHTML = `
-<p style="font-size:.82rem;color:var(--text2);margin-bottom:12px">左键点击预览，右键查看恢复/删除选项</p>
+<div class="toolbar">
+  <span id="trash-sel-bar" class="selected-bar">
+    <span class="selected-count" id="trash-sel-count">0</span> 张已选
+    <button class="btn btn-sm" style="background:rgba(255,255,255,.2);border-color:transparent;color:#fff" id="restore-sel-btn">${icons.prev} 批量恢复</button>
+    <button class="btn-icon" style="color:#fff" id="trash-clear-sel-btn">${icons.close}</button>
+  </span>
+</div>
+<p style="font-size:.82rem;color:var(--text2);margin-bottom:8px">左键预览，右键或长按恢复/删除，点击勾选图标批量操作</p>
 <div id="trash-groups"></div>
 <div class="load-more" id="load-more"><div class="spinner"></div>加载中…</div>`;
+
+  $('#trash-clear-sel-btn').addEventListener('click', () => { clearSelection(); updateTrashSelBar(); });
+  $('#restore-sel-btn').addEventListener('click', restoreSelected);
 
   state.trashPhotos = []; state.trashCursor = ''; state.trashHasMore = true;
   await loadMoreTrash();
@@ -563,8 +594,18 @@ function renderTrashGroups(newPhotos) {
       container.appendChild(group);
     }
     const grid = group.querySelector('.photo-grid');
-    // b-4: 传入 trashMode:true，点击只预览，恢复通过右键菜单
-    photos.forEach(p => grid.appendChild(makePhotoThumb(p, state.trashPhotos, { trashMode: true })));
+    // b-4 + c-5: trashMode 支持勾选批量恢复
+    photos.forEach(p => {
+      const thumb = makePhotoThumb(p, state.trashPhotos, { trashMode: true });
+      // 覆盖 check 的点击，同时更新回收站选择栏
+      const ck = thumb.querySelector('.check');
+      ck.addEventListener('click', e => {
+        e.stopPropagation();
+        toggleSelect(p.id, thumb);
+        updateTrashSelBar();
+      }, { capture: true });
+      grid.appendChild(thumb);
+    });
   }
 }
 async function emptyTrash() {
@@ -575,6 +616,28 @@ async function emptyTrash() {
 async function restorePhoto(id) {
   try { await api.post(`/api/photos/${id}/restore`, {}); switchView('trash'); }
   catch(e) { alert('恢复失败: ' + (e.error || e)); }
+}
+
+// c-5: 更新回收站批量操作栏
+function updateTrashSelBar() {
+  const bar = $('#trash-sel-bar');
+  if (!bar) return;
+  bar.classList.toggle('visible', state.selected.size > 0);
+  const cnt = $('#trash-sel-count');
+  if (cnt) cnt.textContent = state.selected.size;
+}
+
+// c-5: 批量恢复选中图片
+async function restoreSelected() {
+  if (!state.selected.size) return;
+  if (!confirm(`确定要恢复选中的 ${state.selected.size} 张照片吗？`)) return;
+  const ids = [...state.selected];
+  clearSelection();
+  for (const id of ids) {
+    try { await api.post(`/api/photos/${id}/restore`, {}); }
+    catch(e) { console.error('恢复失败:', id, e); }
+  }
+  switchView('trash');
 }
 
 // ── 无限滚动 ──────────────────────────────────────────
@@ -962,4 +1025,16 @@ async function logout() {
 
 // ── 启动 ──────────────────────────────────────────────
 initTheme();
+
+// c-2: 从 hash 恢复视图，支持刷新后保持页面
+function getHashView() {
+  const h = location.hash.replace('#', '');
+  return ['timeline','albums','trash'].includes(h) ? h : 'timeline';
+}
+function setHashView(view) {
+  if (['timeline','albums','trash'].includes(view)) {
+    history.replaceState(null, '', '#' + view);
+  }
+}
+state.view = getHashView();
 renderApp();

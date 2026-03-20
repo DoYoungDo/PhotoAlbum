@@ -545,7 +545,12 @@ async function renderAlbumDetail() {
   }
   $('#topbar-title').textContent = album.name;
   $('#topbar-actions').innerHTML = `<button class="btn btn-sm" id="download-album-btn">下载相册</button><button class="btn btn-danger btn-sm" id="delete-album-btn">删除相册</button><button class="btn btn-sm" id="back-albums-btn">← 返回相册</button>`;
-  $('#download-album-btn').addEventListener('click', () => triggerDownload(`/api/albums/${album.id}/download`));
+  $('#download-album-btn').addEventListener('click', () => {
+    withButtonBusy($('#download-album-btn'), '打包中…', async () => {
+      triggerDownload(`/api/albums/${album.id}/download`);
+      await new Promise(resolve => setTimeout(resolve, 600));
+    });
+  });
   $('#delete-album-btn').addEventListener('click', async () => {
     if (!confirm(`确定要删除相册「${album.name}」吗？图片本身不会被删除。`)) return;
     try {
@@ -812,6 +817,20 @@ function triggerDownload(url) {
 	a.remove();
 }
 
+async function withButtonBusy(button, busyText, fn) {
+	if (!button) return fn();
+	const prevHTML = button.innerHTML;
+	const prevDisabled = button.disabled;
+	button.disabled = true;
+	button.innerHTML = busyText;
+	try {
+		return await fn();
+	} finally {
+		button.disabled = prevDisabled;
+		button.innerHTML = prevHTML;
+	}
+}
+
 async function triggerPostDownload(url, payload, fallbackName) {
 	const res = await fetch(url, {
 		method: 'POST',
@@ -838,15 +857,21 @@ async function triggerPostDownload(url, payload, fallbackName) {
 function downloadCurrentPhoto() {
 	const p = state.lightboxPhotos[state.lightboxIndex];
 	if (!p) return;
-	triggerDownload(`/api/photos/${p.id}/download`);
+	withButtonBusy($('#lb-download'), '下载中…', async () => {
+		triggerDownload(`/api/photos/${p.id}/download`);
+		await new Promise(resolve => setTimeout(resolve, 600));
+	});
 }
 
 async function downloadSelected() {
 	if (!state.selected.size) return;
+	const btn = $('#download-sel-btn');
 	try {
-		await triggerPostDownload('/api/photos/download', {
-			photo_ids: [...state.selected],
-		}, `photoalbum-selection-${Date.now()}.zip`);
+		await withButtonBusy(btn, '打包中…', async () => {
+			await triggerPostDownload('/api/photos/download', {
+				photo_ids: [...state.selected],
+			}, `photoalbum-selection-${Date.now()}.zip`);
+		});
 	} catch (e) {
 		alert('下载失败: ' + (e.error || e));
 	}

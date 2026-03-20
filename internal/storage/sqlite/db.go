@@ -19,12 +19,20 @@ func New(dsn string) (*DB, error) {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
 
+	// SQLite 在高并发写入下容易出现 SQLITE_BUSY。
+	// 这里限制为单连接写入，并设置 busy_timeout，让短暂锁竞争自动等待。
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+
 	// SQLite 最佳实践设置
 	if _, err := db.Exec(`PRAGMA journal_mode=WAL`); err != nil {
 		return nil, fmt.Errorf("设置 WAL 模式失败: %w", err)
 	}
 	if _, err := db.Exec(`PRAGMA foreign_keys=ON`); err != nil {
 		return nil, fmt.Errorf("启用外键失败: %w", err)
+	}
+	if _, err := db.Exec(`PRAGMA busy_timeout=5000`); err != nil {
+		return nil, fmt.Errorf("设置 busy_timeout 失败: %w", err)
 	}
 
 	store := &DB{db: db}

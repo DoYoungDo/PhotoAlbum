@@ -1,8 +1,10 @@
 package sqlite
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -249,6 +251,41 @@ func TestHardDeleteTrashedPhotos(t *testing.T) {
 	trashed, _ := db.ListTrashedPhotos(storage.ListPhotosParams{UserID: 1, Limit: 10})
 	if len(trashed.Photos) != 0 {
 		t.Error("清空后回收站应该为空")
+	}
+}
+
+func TestSavePhoto_ConcurrentWritesDoNotBusy(t *testing.T) {
+	db := newTestDB(t)
+	const n = 20
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, n)
+
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			p := makePhoto(1, time.Now().Add(time.Duration(i)*time.Second))
+			p.UUID = fmt.Sprintf("concurrent-%d", i)
+			if err := db.SavePhoto(p); err != nil {
+				errCh <- err
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		t.Fatalf("并发写入不应失败，得到错误: %v", err)
+	}
+
+	page, err := db.ListPhotos(storage.ListPhotosParams{UserID: 1, Limit: 100})
+	if err != nil {
+		t.Fatalf("查询并发写入结果失败: %v", err)
+	}
+	if len(page.Photos) != n {
+		t.Fatalf("期望保存 %d 张图片，实际 %d 张", n, len(page.Photos))
 	}
 }
 

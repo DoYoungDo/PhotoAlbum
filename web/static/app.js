@@ -127,6 +127,9 @@ const state = {
   lightboxIndex: 0,
   // b-2: 当前用户的分享链接，key=`${type}:${targetId}`
   shareMap: {},
+  // d-2: 上传队列状态
+  uploadJobs: [],
+  uploadRunning: false,
 };
 
 // ── 分享状态加载 ─────────────────────────────────────
@@ -737,6 +740,7 @@ function renderUploadModal() {
     </div>
     <div class="upload-queue" id="upload-queue"></div>
     <div class="modal-footer">
+      <button class="btn" id="retry-failed-btn" style="display:none">重传失败项</button>
       <button class="btn" id="upload-close-btn">关闭</button>
     </div>
   </div>
@@ -746,6 +750,9 @@ let _uploadZoneBound = false;
 function openUploadModal() {
   $('#upload-modal').classList.add('open');
   $('#upload-queue').innerHTML = '';
+  $('#retry-failed-btn').style.display = 'none';
+  state.uploadJobs = [];
+  state.uploadRunning = false;
   const input = $('#file-input');
   if (input) input.value = '';
   if (!_uploadZoneBound) { _uploadZoneBound = true; bindUploadZone(); }
@@ -755,6 +762,7 @@ function bindUploadZone() {
   const zone = $('#drop-zone');
   const input = $('#file-input');
   $('#upload-close-btn').addEventListener('click', () => { closeUploadModal(); switchView('timeline'); });
+  $('#retry-failed-btn').addEventListener('click', retryFailedUploads);
   zone.addEventListener('click', e => { if (e.target !== input) input.click(); });
   zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
@@ -767,15 +775,40 @@ async function handleFiles(fileList) {
   const queue = $('#upload-queue');
   for (const file of files) {
     const id = uid();
+    const job = { id, file, status: 'queued' };
+    state.uploadJobs.push(job);
     const row = el('div', 'upload-item');
-    row.innerHTML = `<span class="up-name">${file.name}</span><div style="flex:1"><div class="progress-bar"><div class="progress-fill" style="width:0%" id="prog-${id}"></div></div></div><span class="up-status" id="stat-${id}">等待中</span>`;
+    row.id = `upload-row-${id}`;
+    row.innerHTML = `<span class="up-name">${file.name}</span><div style="flex:1"><div class="progress-bar"><div class="progress-fill" style="width:0%" id="prog-${id}"></div></div></div><span class="up-status" id="stat-${id}">等待中</span><button class="btn btn-sm" id="retry-${id}" style="display:none">重传</button>`;
     queue.appendChild(row);
-    uploadFile(file, id);
+    const retryBtn = row.querySelector(`#retry-${id}`);
+    retryBtn.addEventListener('click', () => retrySingleUpload(id));
+  }
+
+  runUploadQueue();
+}
+
+async function runUploadQueue() {
+  if (state.uploadRunning) return;
+  state.uploadRunning = true;
+  try {
+    for (;;) {
+      const job = state.uploadJobs.find(j => j.status === 'queued');
+      if (!job) break;
+      await uploadFile(job.file, job.id, job);
+    }
+  } finally {
+    state.uploadRunning = false;
+    updateRetryFailedButton();
   }
 }
-async function uploadFile(file, id) {
+
+async function uploadFile(file, id, job) {
   const prog = $(`#prog-${id}`);
   const stat = $(`#stat-${id}`);
+  const retryBtn = $(`#retry-${id}`);
+  if (job) job.status = 'uploading';
+  if (retryBtn) retryBtn.style.display = 'none';
   if (stat) { stat.textContent = '上传中'; stat.className = 'up-status'; }
   const fd = new FormData();
   fd.append('photo', file);
@@ -789,10 +822,52 @@ async function uploadFile(file, id) {
       xhr.send(fd);
     });
     if (prog) prog.style.width = '100%';
+    if (job) job.status = 'done';
     if (stat) { stat.textContent = '完成'; stat.className = 'up-status done'; }
   } catch(e) {
+    if (job) job.status = 'failed';
     if (stat) { stat.textContent = e.error || '失败'; stat.className = 'up-status error'; }
+    if (retryBtn) retryBtn.style.display = '';
   }
+  updateRetryFailedButton();
+}
+
+function updateRetryFailedButton() {
+  const btn = $('#retry-failed-btn');
+  if (!btn) return;
+  const failedCount = state.uploadJobs.filter(j => j.status === 'failed').length;
+  btn.style.display = failedCount > 0 ? '' : 'none';
+  btn.textContent = failedCount > 0 ? `重传失败项（${failedCount}）` : '重传失败项';
+}
+
+function retrySingleUpload(id) {
+  const job = state.uploadJobs.find(j => j.id === id);
+  if (!job) return;
+  job.status = 'queued';
+  const prog = $(`#prog-${id}`);
+  const stat = $(`#stat-${id}`);
+  const retryBtn = $(`#retry-${id}`);
+  if (prog) prog.style.width = '0%';
+  if (stat) { stat.textContent = '等待重传'; stat.className = 'up-status'; }
+  if (retryBtn) retryBtn.style.display = 'none';
+  runUploadQueue();
+}
+
+function retryFailedUploads() {
+  let found = false;
+  state.uploadJobs.forEach(job => {
+    if (job.status === 'failed') {
+      found = true;
+      job.status = 'queued';
+      const prog = $(`#prog-${job.id}`);
+      const stat = $(`#stat-${job.id}`);
+      const retryBtn = $(`#retry-${job.id}`);
+      if (prog) prog.style.width = '0%';
+      if (stat) { stat.textContent = '等待重传'; stat.className = 'up-status'; }
+      if (retryBtn) retryBtn.style.display = 'none';
+    }
+  });
+  if (found) runUploadQueue();
 }
 
 // ── 新建相册模态框 ────────────────────────────────────

@@ -49,7 +49,7 @@ func main() {
 	photoService := service.NewPhotoService(repo, cfg.StoragePath)
 	albumService := service.NewAlbumService(repo)
 	shareService := service.NewShareService(repo)
-	app := server.New(cfg, photoService, albumService, shareService)
+	app := server.New(cfg, photoService, albumService, shareService, webFS)
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	fmt.Printf("HTTP 服务已启动: http://127.0.0.1%s\n", addr)

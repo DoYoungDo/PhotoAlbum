@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"io/fs"
 	"net/http"
 
 	"photoalbum/internal/config"
@@ -15,6 +16,7 @@ type Server struct {
 	albumService *service.AlbumService
 	shareService *service.ShareService
 	mux          *http.ServeMux
+	staticFS     fs.FS // embed 或本地文件系统
 }
 
 // New 创建并初始化 Server
@@ -23,12 +25,14 @@ func New(
 	photoService *service.PhotoService,
 	albumService *service.AlbumService,
 	shareService *service.ShareService,
+	staticFS fs.FS,
 ) *Server {
 	s := &Server{
 		cfg:          cfg,
 		photoService: photoService,
 		albumService: albumService,
 		shareService: shareService,
+		staticFS:     staticFS,
 		mux:          http.NewServeMux(),
 	}
 	s.registerRoutes()
@@ -42,8 +46,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // registerRoutes 注册所有路由
 func (s *Server) registerRoutes() {
-	// 静态资源（第四阶段先用本地文件系统，后续再切换为 embed）
-	s.mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
+	// 静态资源：优先使用 embed FS，回退到本地文件系统
+	var staticHandler http.Handler
+	if s.staticFS != nil {
+		sub, err := fs.Sub(s.staticFS, "web/static")
+		if err == nil {
+			staticHandler = http.FileServer(http.FS(sub))
+		}
+	}
+	if staticHandler == nil {
+		staticHandler = http.FileServer(http.Dir("web/static"))
+	}
+	s.mux.Handle("GET /static/", http.StripPrefix("/static/", staticHandler))
 
 	// 页面路由（返回 HTML，需要登录）
 	s.mux.HandleFunc("GET /", s.auth(s.handleIndex))
@@ -86,9 +100,10 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/shares", s.auth(s.handleCreateShare))
 	s.mux.HandleFunc("DELETE /api/shares/{id}", s.auth(s.handleDeleteShare))
 
-	// 分享访问（无需登录）
+	// ���享访问（无需登录）
 	s.mux.HandleFunc("GET /s/{token}", s.handleSharePage)
 	s.mux.HandleFunc("GET /api/s/{token}", s.handleGetShare)
+	s.mux.HandleFunc("GET /api/s/{token}/photos", s.handleGetSharePhotos)
 	s.mux.HandleFunc("GET /media/s/{token}/{uuid}", s.handleServeSharedMedia)
 }
 

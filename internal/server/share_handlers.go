@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"photoalbum/internal/service"
+	"photoalbum/internal/storage"
 )
 
 type shareRequest struct {
@@ -92,4 +93,28 @@ func (s *Server) handleServeSharedMedia(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	http.ServeFile(w, r, s.photoService.PhotoPath(photo))
+}
+
+// handleGetSharePhotos 获取分享相册中的图片列表（无需登录）
+func (s *Server) handleGetSharePhotos(w http.ResponseWriter, r *http.Request) {
+	link, err := s.shareService.GetShareByToken(r.PathValue("token"))
+	if err != nil || link == nil {
+		writeError(w, http.StatusNotFound, "分享链接不存在或已过期")
+		return
+	}
+	if link.Type != "album" {
+		writeError(w, http.StatusBadRequest, "当前分享不是相册类型")
+		return
+	}
+	page, err := s.albumService.ListAlbumPhotos(storage.ListAlbumPhotosParams{
+		AlbumID: link.TargetID,
+		UserID:  link.CreatedBy,
+		Cursor:  r.URL.Query().Get("cursor"),
+		Limit:   30,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, page)
 }

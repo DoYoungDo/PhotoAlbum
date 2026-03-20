@@ -16,7 +16,10 @@ type shareRequest struct {
 }
 
 func (s *Server) handleListShares(w http.ResponseWriter, r *http.Request) {
-	userID, _ := s.currentUserID(currentUsername(r))
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
+		return
+	}
 	links, err := s.shareService.ListShares(userID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -26,7 +29,10 @@ func (s *Server) handleListShares(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
-	userID, _ := s.currentUserID(currentUsername(r))
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
+		return
+	}
 	var req shareRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "无效的请求体")
@@ -51,7 +57,10 @@ func (s *Server) handleCreateShare(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteShare(w http.ResponseWriter, r *http.Request) {
-	userID, _ := s.currentUserID(currentUsername(r))
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
+		return
+	}
 	id, err := parseInt64Param(r.PathValue("id"), "分享ID")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

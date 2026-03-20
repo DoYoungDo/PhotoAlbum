@@ -18,7 +18,10 @@ type albumPhotoRequest struct {
 }
 
 func (s *Server) handleListAlbums(w http.ResponseWriter, r *http.Request) {
-	userID, _ := s.currentUserID(currentUsername(r))
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
+		return
+	}
 	albums, err := s.albumService.ListAlbums(userID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -28,7 +31,10 @@ func (s *Server) handleListAlbums(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateAlbum(w http.ResponseWriter, r *http.Request) {
-	userID, _ := s.currentUserID(currentUsername(r))
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
+		return
+	}
 	var req albumRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "无效的请求体")
@@ -43,7 +49,10 @@ func (s *Server) handleCreateAlbum(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetAlbum(w http.ResponseWriter, r *http.Request) {
-	userID, _ := s.currentUserID(currentUsername(r))
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
+		return
+	}
 	id, err := parseInt64Param(r.PathValue("id"), "相册ID")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -62,7 +71,10 @@ func (s *Server) handleGetAlbum(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateAlbum(w http.ResponseWriter, r *http.Request) {
-	userID, _ := s.currentUserID(currentUsername(r))
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
+		return
+	}
 	id, err := parseInt64Param(r.PathValue("id"), "相册ID")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -82,7 +94,10 @@ func (s *Server) handleUpdateAlbum(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteAlbum(w http.ResponseWriter, r *http.Request) {
-	userID, _ := s.currentUserID(currentUsername(r))
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
+		return
+	}
 	id, err := parseInt64Param(r.PathValue("id"), "相册ID")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -96,7 +111,10 @@ func (s *Server) handleDeleteAlbum(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListAlbumPhotos(w http.ResponseWriter, r *http.Request) {
-	userID, _ := s.currentUserID(currentUsername(r))
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
+		return
+	}
 	albumID, err := parseInt64Param(r.PathValue("id"), "相册ID")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -116,7 +134,10 @@ func (s *Server) handleListAlbumPhotos(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAddPhotoToAlbum(w http.ResponseWriter, r *http.Request) {
-	userID, _ := s.currentUserID(currentUsername(r))
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
+		return
+	}
 	albumID, err := parseInt64Param(r.PathValue("id"), "相册ID")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -135,7 +156,10 @@ func (s *Server) handleAddPhotoToAlbum(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRemovePhotoFromAlbum(w http.ResponseWriter, r *http.Request) {
-	userID, _ := s.currentUserID(currentUsername(r))
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
+		return
+	}
 	albumID, err := parseInt64Param(r.PathValue("id"), "相册ID")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

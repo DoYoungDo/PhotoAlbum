@@ -158,7 +158,10 @@ var (
 
 func serveHTML(w http.ResponseWriter, t *template.Template) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_ = t.Execute(w, nil)
+	if err := t.Execute(w, nil); err != nil {
+		// 模板是编译期内联常量，执行失败属于严重错误
+		http.Error(w, "内部错误", http.StatusInternalServerError)
+	}
 }
 
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {

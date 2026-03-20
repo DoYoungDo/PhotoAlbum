@@ -15,6 +15,9 @@ import (
 	"photoalbum/internal/storage"
 )
 
+// maxUploadSize 单次上传最大 100MB
+const maxUploadSize = 100 << 20
+
 type loginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
@@ -63,9 +66,8 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListPhotos(w http.ResponseWriter, r *http.Request) {
-	userID, err := s.currentUserID(currentUsername(r))
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, err.Error())
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
 		return
 	}
 	page, err := s.photoService.GetTimeline(storage.ListPhotosParams{
@@ -86,20 +88,20 @@ func readUploadedFile(file multipart.File) ([]byte, error) {
 }
 
 func (s *Server) handleUploadPhoto(w http.ResponseWriter, r *http.Request) {
-	userID, err := s.currentUserID(currentUsername(r))
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, err.Error())
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
 		return
 	}
 
-	if err := r.ParseMultipartForm(64 << 20); err != nil {
-		writeError(w, http.StatusBadRequest, "解析表单失败")
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		writeError(w, http.StatusRequestEntityTooLarge, "文件过大，最大支持 100MB")
 		return
 	}
 
 	file, header, err := r.FormFile("photo")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "缺少 photo 文件")
+		writeError(w, http.StatusBadRequest, "缺少 photo 文件字段")
 		return
 	}
 	data, err := readUploadedFile(file)
@@ -124,7 +126,10 @@ func (s *Server) handleUploadPhoto(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetPhoto(w http.ResponseWriter, r *http.Request) {
-	userID, _ := s.currentUserID(currentUsername(r))
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
+		return
+	}
 	id, err := parseInt64Param(r.PathValue("id"), "图片ID")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -143,7 +148,10 @@ func (s *Server) handleGetPhoto(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeletePhoto(w http.ResponseWriter, r *http.Request) {
-	userID, _ := s.currentUserID(currentUsername(r))
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
+		return
+	}
 	id, err := parseInt64Param(r.PathValue("id"), "图片ID")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -157,7 +165,10 @@ func (s *Server) handleDeletePhoto(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRestorePhoto(w http.ResponseWriter, r *http.Request) {
-	userID, _ := s.currentUserID(currentUsername(r))
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
+		return
+	}
 	id, err := parseInt64Param(r.PathValue("id"), "图片ID")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -171,7 +182,10 @@ func (s *Server) handleRestorePhoto(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListTrash(w http.ResponseWriter, r *http.Request) {
-	userID, _ := s.currentUserID(currentUsername(r))
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
+		return
+	}
 	page, err := s.photoService.GetTrash(storage.ListPhotosParams{
 		UserID: userID,
 		Cursor: r.URL.Query().Get("cursor"),
@@ -185,7 +199,10 @@ func (s *Server) handleListTrash(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleEmptyTrash(w http.ResponseWriter, r *http.Request) {
-	userID, _ := s.currentUserID(currentUsername(r))
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
+		return
+	}
 	if err := s.photoService.EmptyTrash(userID); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -193,18 +210,11 @@ func (s *Server) handleEmptyTrash(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "回收站已清空"})
 }
 
-func (s *Server) servePhotoFile(w http.ResponseWriter, photo *storage.Photo, thumbnail bool) {
-	var path string
-	if thumbnail {
-		path = s.photoService.ThumbnailPath(photo)
-	} else {
-		path = s.photoService.PhotoPath(photo)
-	}
-	http.ServeFile(w, nil, path)
-}
-
 func (s *Server) handleServePhoto(w http.ResponseWriter, r *http.Request) {
-	userID, _ := s.currentUserID(currentUsername(r))
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
+		return
+	}
 	uuid := strings.TrimSuffix(r.PathValue("uuid"), filepath.Ext(r.PathValue("uuid")))
 	photo, err := s.photoService.GetPhotoByUUID(uuid, userID)
 	if err != nil || photo == nil {
@@ -215,7 +225,10 @@ func (s *Server) handleServePhoto(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleServeThumbnail(w http.ResponseWriter, r *http.Request) {
-	userID, _ := s.currentUserID(currentUsername(r))
+	userID := s.mustUserID(w, r)
+	if userID == 0 {
+		return
+	}
 	uuid := strings.TrimSuffix(r.PathValue("uuid"), filepath.Ext(r.PathValue("uuid")))
 	photo, err := s.photoService.GetPhotoByUUID(uuid, userID)
 	if err != nil || photo == nil {

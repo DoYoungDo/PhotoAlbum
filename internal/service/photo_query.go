@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"photoalbum/internal/storage"
 )
@@ -44,12 +45,12 @@ func (s *PhotoService) EmptyTrash(userID int64) error {
 		return fmt.Errorf("清空回收站失败: %w", err)
 	}
 
-	// 删除磁盘上的原图和缩略���
+	// 删除磁盘上的原图和缩略图
 	for _, u := range uuids {
 		// 原图：尝试常见后缀（UUID 存储时不含扩展名，需要遍历）
 		for _, ext := range []string{".jpg", ".jpeg", ".png", ".gif", ".webp"} {
-			origPath := s.storagePath + "/" + u + ext
-			thumbPath := s.storagePath + "/.thumbnails/" + u + ext
+			origPath := filepath.Join(s.storagePath, u+ext)
+			thumbPath := filepath.Join(s.storagePath, ".thumbnails", u+ext)
 			os.Remove(origPath)
 			os.Remove(thumbPath)
 		}

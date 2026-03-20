@@ -50,6 +50,9 @@ function groupByDate(photos) {
   }
   return groups;
 }
+// 唯一 ID 生成器，解决重复文件名导致的 ID 冲突
+let _uid = 0;
+function uid() { return 'u' + (++_uid); }
 
 // ── SVG 图标 ──────────────────────────────────────────
 const icons = {
@@ -81,14 +84,17 @@ function toggleTheme() {
   updateThemeBtn();
 }
 function updateThemeBtn() {
+  // 只替换图标，不替换文字节点
   const btn = $('#theme-btn');
-  if (btn) btn.innerHTML = document.documentElement.dataset.theme === 'dark' ? icons.sun : icons.moon;
+  if (!btn) return;
+  const iconEl = btn.querySelector('.theme-icon');
+  if (iconEl) iconEl.innerHTML = document.documentElement.dataset.theme === 'dark' ? icons.sun : icons.moon;
 }
 
 // ── 状态 ──────────────────────────────────────────────
 const state = {
-  view: 'timeline',       // timeline | albums | album-detail | trash
-  photos: [],             // 当前时间线图片
+  view: 'timeline',
+  photos: [],
   timelineCursor: '',
   timelineHasMore: true,
   timelineLoading: false,
@@ -102,13 +108,51 @@ const state = {
   albumCursor: '',
   albumHasMore: true,
   albumLoading: false,
-  selected: new Set(),    // 已选图片 ID 集合
-  lightboxPhotos: [],     // 灯箱当前图片列表
+  selected: new Set(),
+  lightboxPhotos: [],
   lightboxIndex: 0,
 };
 
+// ── 右键菜单 ──────────────────────────────────────────
+let _ctxMenu = null;
+
+function showContextMenu(x, y, items) {
+  closeContextMenu();
+  const menu = el('div', 'ctx-menu');
+  menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;z-index:2000;
+    background:var(--card);border:1px solid var(--border);border-radius:8px;
+    box-shadow:0 4px 16px rgba(0,0,0,.15);padding:4px 0;min-width:150px;`;
+  items.forEach(item => {
+    if (item === '-') {
+      const sep = el('div');
+      sep.style.cssText = 'height:1px;background:var(--border);margin:4px 0;';
+      menu.appendChild(sep);
+      return;
+    }
+    const btn = el('button');
+    btn.textContent = item.label;
+    btn.style.cssText = `display:block;width:100%;padding:8px 14px;background:none;border:none;
+      text-align:left;font-size:.88rem;color:var(--text);cursor:pointer;`;
+    btn.addEventListener('mouseenter', () => btn.style.background = 'var(--bg2)');
+    btn.addEventListener('mouseleave', () => btn.style.background = 'none');
+    btn.addEventListener('click', () => { closeContextMenu(); item.action(); });
+    menu.appendChild(btn);
+  });
+  document.body.appendChild(menu);
+  _ctxMenu = menu;
+  // 防止菜单超出视口
+  const rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth)  menu.style.left = (x - rect.width) + 'px';
+  if (rect.bottom > window.innerHeight) menu.style.top = (y - rect.height) + 'px';
+}
+
+function closeContextMenu() {
+  if (_ctxMenu) { _ctxMenu.remove(); _ctxMenu = null; }
+}
+
 // ── 渲染框架 ──────────────────────────────────────────
 function renderApp() {
+  const isDark = document.documentElement.dataset.theme === 'dark';
   document.body.innerHTML = `
 <div id="app">
   <nav class="nav">
@@ -118,7 +162,7 @@ function renderApp() {
     <a class="nav-item${state.view === 'trash' ? ' active' : ''}" href="#" data-view="trash">${icons.trash} 回收站</a>
     <div class="nav-spacer"></div>
     <div class="nav-bottom">
-      <a class="nav-item" href="#" id="theme-btn">${document.documentElement.dataset.theme === 'dark' ? icons.sun : icons.moon} 切换主题</a>
+      <a class="nav-item" href="#" id="theme-btn"><span class="theme-icon">${isDark ? icons.sun : icons.moon}</span> 切换主题</a>
       <a class="nav-item" href="#" id="logout-btn">${icons.logout} 退出登录</a>
     </div>
   </nav>
@@ -157,10 +201,10 @@ function switchView(view) {
 
 function renderView() {
   switch (state.view) {
-    case 'timeline':    renderTimeline(); break;
-    case 'albums':      renderAlbums();   break;
+    case 'timeline':     renderTimeline();    break;
+    case 'albums':       renderAlbums();      break;
     case 'album-detail': renderAlbumDetail(); break;
-    case 'trash':       renderTrash();    break;
+    case 'trash':        renderTrash();       break;
   }
 }
 
@@ -233,12 +277,62 @@ function makePhotoThumb(photo, listRef) {
   const div = el('div', 'photo-thumb');
   div.dataset.id = photo.id;
   div.innerHTML = `<span class="check">${icons.check}</span><img loading="lazy" src="/media/thumbnails/${photo.uuid}" alt="${photo.original_name}">`;
+
+  // 左键点击：有已选中时切换选择，否则打开灯箱
   div.addEventListener('click', e => {
-    if (e.shiftKey || state.selected.size > 0) { toggleSelect(photo.id, div); }
-    else { openLightbox(listRef, listRef.indexOf(photo)); }
+    if (state.selected.size > 0) {
+      toggleSelect(photo.id, div);
+    } else {
+      openLightbox(listRef, listRef.indexOf(photo));
+    }
   });
+
+  // 右键：上下文菜单（fix-6）
+  div.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    showPhotoContextMenu(e.clientX, e.clientY, photo, div, listRef);
+  });
+
   if (state.selected.has(photo.id)) div.classList.add('selected');
   return div;
+}
+
+// 图片右键菜单（fix-6）
+function showPhotoContextMenu(x, y, photo, thumbEl, listRef) {
+  const isSelected = state.selected.has(photo.id);
+  showContextMenu(x, y, [
+    {
+      label: isSelected ? '取消选择' : '选择',
+      action: () => toggleSelect(photo.id, thumbEl),
+    },
+    { label: '查看', action: () => openLightbox(listRef, listRef.indexOf(photo)) },
+    '-',
+    { label: '添加到相册…', action: () => addSinglePhotoToAlbum(photo.id) },
+    { label: '分享…', action: () => openShareModal('photo', photo.id) },
+    '-',
+    { label: '删除', action: () => deleteSinglePhoto(photo.id) },
+  ]);
+}
+
+async function addSinglePhotoToAlbum(photoId) {
+  try {
+    const albums = await api.get('/api/albums');
+    if (!albums || !albums.length) { alert('还没有相册，请先新建相册'); return; }
+    const name = prompt('选择相册（输入名称或序号）：\n' + albums.map((a, i) => `${i+1}. ${a.name}`).join('\n'));
+    if (!name) return;
+    const album = albums.find(a => a.name === name) || albums[parseInt(name) - 1];
+    if (!album) { alert('未找到相册'); return; }
+    await api.post(`/api/albums/${album.id}/photos`, { photo_id: photoId });
+    alert(`已添加到「${album.name}」`);
+  } catch(e) { alert('操作失败: ' + (e.error || e)); }
+}
+
+async function deleteSinglePhoto(photoId) {
+  if (!confirm('确定要将这张照片移入回收站吗？')) return;
+  try {
+    await api.del(`/api/photos/${photoId}`);
+    switchView('timeline');
+  } catch(e) { alert('删除失败: ' + (e.error || e)); }
 }
 
 // ── 选择 ─────────────────────────────────────────────
@@ -421,8 +515,9 @@ function renderTrashGroups(newPhotos) {
     const grid = group.querySelector('.photo-grid');
     photos.forEach(p => {
       const thumb = makePhotoThumb(p, state.trashPhotos);
-      // 替换点击为恢复操作
-      thumb.onclick = () => restorePhoto(p.id);
+      // 回收站中覆盖点击为恢复操作
+      thumb.onclick = null;
+      thumb.addEventListener('click', () => restorePhoto(p.id));
       grid.appendChild(thumb);
     });
   }
@@ -449,9 +544,9 @@ function observeLoadMore(id, loadFn, canLoad) {
   obs.observe(sentinel);
 }
 function updateLoadMoreUI(id, hasMore) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.style.display = hasMore ? '' : 'none';
+  const e = document.getElementById(id);
+  if (!e) return;
+  e.style.display = hasMore ? '' : 'none';
 }
 
 // ── 灯箱 ──────────────────────────────────────────────
@@ -470,7 +565,12 @@ function renderLightbox() {
   <div class="lightbox-info" id="lb-info"></div>
 </div>`;
 }
+
 function bindGlobal() {
+  // 关闭右键菜单
+  document.addEventListener('click', () => closeContextMenu());
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeContextMenu(); });
+
   document.addEventListener('click', e => {
     if (e.target.closest('#lb-close')) closeLightbox();
     if (e.target.closest('#lb-prev'))  lbNav(-1);
@@ -479,11 +579,12 @@ function bindGlobal() {
   });
   document.addEventListener('keydown', e => {
     if (!$('#lightbox').classList.contains('open')) return;
-    if (e.key === 'Escape')      closeLightbox();
-    if (e.key === 'ArrowLeft')   lbNav(-1);
-    if (e.key === 'ArrowRight')  lbNav(1);
+    if (e.key === 'Escape')     closeLightbox();
+    if (e.key === 'ArrowLeft')  lbNav(-1);
+    if (e.key === 'ArrowRight') lbNav(1);
   });
 }
+
 function openLightbox(photos, index) {
   state.lightboxPhotos = photos;
   state.lightboxIndex  = index;
@@ -516,6 +617,8 @@ function lbRender() {
 async function lbShare() {
   const p = state.lightboxPhotos[state.lightboxIndex];
   if (!p) return;
+  // 先关闭灯箱，再打开分享弹窗，避免层级冲突（fix-4 辅助方案）
+  closeLightbox();
   openShareModal('photo', p.id);
 }
 
@@ -537,33 +640,56 @@ function renderUploadModal() {
   </div>
 </div>`;
 }
-function openUploadModal() { $('#upload-modal').classList.add('open'); bindUploadZone(); }
+
+let _uploadZoneBound = false;
+
+function openUploadModal() {
+  const modal = $('#upload-modal');
+  modal.classList.add('open');
+  // fix-2：每次打开清空上次的进度列表
+  $('#upload-queue').innerHTML = '';
+  // fix-3：重置文件 input，避免选同一文件不触发 change
+  const input = $('#file-input');
+  if (input) input.value = '';
+  // 只绑定一次事件
+  if (!_uploadZoneBound) {
+    _uploadZoneBound = true;
+    bindUploadZone();
+  }
+}
 function closeUploadModal() { $('#upload-modal').classList.remove('open'); }
+
 function bindUploadZone() {
   const zone = $('#drop-zone');
   const input = $('#file-input');
   $('#upload-close-btn').addEventListener('click', () => { closeUploadModal(); switchView('timeline'); });
-  zone.addEventListener('click', () => input.click());
+  zone.addEventListener('click', e => {
+    // 防止点击 input 自身时二次触发
+    if (e.target !== input) input.click();
+  });
   zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
   zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('drag-over'); handleFiles(e.dataTransfer.files); });
-  input.addEventListener('change', () => handleFiles(input.files));
+  input.addEventListener('change', () => { if (input.files.length) handleFiles(input.files); });
 }
+
 async function handleFiles(fileList) {
   const files = [...fileList].filter(f => f.type.startsWith('image/'));
   if (!files.length) return;
   const queue = $('#upload-queue');
   for (const file of files) {
+    // fix-3：用唯一 ID 而非文件名，避免重复文件名冲突
+    const id = uid();
     const row = el('div', 'upload-item');
-    row.innerHTML = `<span class="up-name">${file.name}</span><div style="flex:1"><div class="progress-bar"><div class="progress-fill" style="width:0%" id="prog-${file.name.replace(/\W/g,'_')}"></div></div></div><span class="up-status" id="stat-${file.name.replace(/\W/g,'_')}">等待中</span>`;
+    row.innerHTML = `<span class="up-name">${file.name}</span><div style="flex:1"><div class="progress-bar"><div class="progress-fill" style="width:0%" id="prog-${id}"></div></div></div><span class="up-status" id="stat-${id}">等待中</span>`;
     queue.appendChild(row);
-    uploadFile(file);
+    uploadFile(file, id);
   }
 }
-async function uploadFile(file) {
-  const key = file.name.replace(/\W/g, '_');
-  const prog = $(`#prog-${key}`);
-  const stat = $(`#stat-${key}`);
+
+async function uploadFile(file, id) {
+  const prog = $(`#prog-${id}`);
+  const stat = $(`#stat-${id}`);
   if (stat) { stat.textContent = '上传中'; stat.className = 'up-status'; }
   const fd = new FormData();
   fd.append('photo', file);
@@ -572,8 +698,8 @@ async function uploadFile(file) {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', '/api/photos/upload');
       xhr.upload.onprogress = e => { if (prog && e.lengthComputable) prog.style.width = (e.loaded / e.total * 100) + '%'; };
-      xhr.onload = () => { if (xhr.status === 201) resolve(); else reject(JSON.parse(xhr.responseText)); };
-      xhr.onerror = reject;
+      xhr.onload = () => { if (xhr.status === 201) resolve(); else { try { reject(JSON.parse(xhr.responseText)); } catch { reject({ error: xhr.statusText }); } } };
+      xhr.onerror = () => reject({ error: '网络错误' });
       xhr.send(fd);
     });
     if (prog) prog.style.width = '100%';
@@ -614,13 +740,13 @@ async function createAlbum() {
   } catch(e) { alert('创建失败: ' + (e.error || e)); }
 }
 
-// ── 添加到相册 ────────────────────────────────────────
+// ── 批量添加到相册 ────────────────────────────────────
 async function openAddToAlbumModal() {
   if (!state.selected.size) return;
   try {
     const albums = await api.get('/api/albums');
     if (!albums || !albums.length) { alert('还没有相册，请先新建相册'); return; }
-    const name = prompt('选择相册（输入名称）：\n' + albums.map((a, i) => `${i+1}. ${a.name}`).join('\n'));
+    const name = prompt('选择相册（输入名称或序号）：\n' + albums.map((a, i) => `${i+1}. ${a.name}`).join('\n'));
     if (!name) return;
     const album = albums.find(a => a.name === name) || albums[parseInt(name) - 1];
     if (!album) { alert('未找到相册'); return; }
@@ -679,7 +805,12 @@ async function generateShareLink() {
     const input = $('#share-link-input');
     input.value = url;
     $('#share-result').style.display = '';
-    input.addEventListener('click', () => { navigator.clipboard.writeText(url).then(() => alert('已复制链接')); });
+    // 移除旧监听再绑定，避免重复绑定
+    const newInput = input.cloneNode(true);
+    input.parentNode.replaceChild(newInput, input);
+    newInput.addEventListener('click', () => {
+      navigator.clipboard.writeText(url).then(() => alert('已复制链接'));
+    });
   } catch(e) { alert('生成失败: ' + (e.error || e)); }
 }
 

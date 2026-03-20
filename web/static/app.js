@@ -50,7 +50,6 @@ function groupByDate(photos) {
   }
   return groups;
 }
-// 唯一 ID 生成器，解决重复文件名导致的 ID 冲突
 let _uid = 0;
 function uid() { return 'u' + (++_uid); }
 
@@ -70,6 +69,7 @@ const icons = {
   photo:    `<svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`,
   logout:   `<svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`,
   plus:     `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>`,
+  shareSmall: `<svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>`,
 };
 
 // ── 主题 ──────────────────────────────────────────────
@@ -84,7 +84,6 @@ function toggleTheme() {
   updateThemeBtn();
 }
 function updateThemeBtn() {
-  // 只替换图标，不替换文字节点
   const btn = $('#theme-btn');
   if (!btn) return;
   const iconEl = btn.querySelector('.theme-icon');
@@ -111,28 +110,42 @@ const state = {
   selected: new Set(),
   lightboxPhotos: [],
   lightboxIndex: 0,
+  // b-2: 当前用户的分享链接，key=`${type}:${targetId}`
+  shareMap: {},
 };
+
+// ── 分享状态加载 ─────────────────────────────────────
+async function loadShareMap() {
+  try {
+    const links = await api.get('/api/shares');
+    state.shareMap = {};
+    (links || []).forEach(l => {
+      const key = `${l.type}:${l.target_id}`;
+      if (!state.shareMap[key]) state.shareMap[key] = [];
+      state.shareMap[key].push(l);
+    });
+  } catch(e) { /* 非关键，忽略 */ }
+}
 
 // ── 右键菜单 ──────────────────────────────────────────
 let _ctxMenu = null;
-
 function showContextMenu(x, y, items) {
   closeContextMenu();
-  const menu = el('div', 'ctx-menu');
+  const menu = el('div');
   menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;z-index:2000;
     background:var(--card);border:1px solid var(--border);border-radius:8px;
-    box-shadow:0 4px 16px rgba(0,0,0,.15);padding:4px 0;min-width:150px;`;
+    box-shadow:0 4px 16px rgba(0,0,0,.15);padding:4px 0;min-width:160px;`;
   items.forEach(item => {
     if (item === '-') {
       const sep = el('div');
       sep.style.cssText = 'height:1px;background:var(--border);margin:4px 0;';
-      menu.appendChild(sep);
-      return;
+      menu.appendChild(sep); return;
     }
     const btn = el('button');
     btn.textContent = item.label;
-    btn.style.cssText = `display:block;width:100%;padding:8px 14px;background:none;border:none;
-      text-align:left;font-size:.88rem;color:var(--text);cursor:pointer;`;
+    if (item.danger) btn.style.color = 'var(--danger)';
+    btn.style.cssText += `display:block;width:100%;padding:8px 14px;background:none;border:none;
+      text-align:left;font-size:.88rem;cursor:pointer;`;
     btn.addEventListener('mouseenter', () => btn.style.background = 'var(--bg2)');
     btn.addEventListener('mouseleave', () => btn.style.background = 'none');
     btn.addEventListener('click', () => { closeContextMenu(); item.action(); });
@@ -140,12 +153,10 @@ function showContextMenu(x, y, items) {
   });
   document.body.appendChild(menu);
   _ctxMenu = menu;
-  // 防止菜单超出视口
   const rect = menu.getBoundingClientRect();
-  if (rect.right > window.innerWidth)  menu.style.left = (x - rect.width) + 'px';
-  if (rect.bottom > window.innerHeight) menu.style.top = (y - rect.height) + 'px';
+  if (rect.right > window.innerWidth)   menu.style.left = (x - rect.width) + 'px';
+  if (rect.bottom > window.innerHeight) menu.style.top  = (y - rect.height) + 'px';
 }
-
 function closeContextMenu() {
   if (_ctxMenu) { _ctxMenu.remove(); _ctxMenu = null; }
 }
@@ -154,8 +165,9 @@ function closeContextMenu() {
 function renderApp() {
   const isDark = document.documentElement.dataset.theme === 'dark';
   document.body.innerHTML = `
+<div class="drawer-overlay" id="drawer-overlay"></div>
 <div id="app">
-  <nav class="nav">
+  <nav class="nav" id="main-nav">
     <div class="nav-logo">${icons.photo} PhotoAlbum</div>
     <a class="nav-item${state.view === 'timeline' ? ' active' : ''}" href="#" data-view="timeline">${icons.timeline} 时间线</a>
     <a class="nav-item${state.view === 'albums' || state.view === 'album-detail' ? ' active' : ''}" href="#" data-view="albums">${icons.album} 相册</a>
@@ -168,6 +180,9 @@ function renderApp() {
   </nav>
   <div class="main">
     <div class="topbar">
+      <button class="hamburger" id="hamburger-btn" aria-label="菜单">
+        <span></span><span></span><span></span>
+      </button>
       <span class="topbar-title" id="topbar-title"></span>
       <div id="topbar-actions"></div>
     </div>
@@ -177,7 +192,9 @@ function renderApp() {
 ${renderLightbox()}
 ${renderUploadModal()}
 ${renderCreateAlbumModal()}
-${renderShareModal()}`;
+${renderShareModal()}
+${renderAlbumPickerModal()}
+${renderShareListModal()}`;
 
   bindNav();
   bindGlobal();
@@ -186,10 +203,29 @@ ${renderShareModal()}`;
 
 function bindNav() {
   $$('.nav-item[data-view]').forEach(a => {
-    a.addEventListener('click', e => { e.preventDefault(); switchView(a.dataset.view); });
+    a.addEventListener('click', e => { e.preventDefault(); closeDrawer(); switchView(a.dataset.view); });
   });
   $('#theme-btn').addEventListener('click', e => { e.preventDefault(); toggleTheme(); });
   $('#logout-btn').addEventListener('click', e => { e.preventDefault(); logout(); });
+
+  // 汉堡按钮 / 抽屉 (b-6)
+  const hamburger = $('#hamburger-btn');
+  const overlay   = $('#drawer-overlay');
+  if (hamburger) hamburger.addEventListener('click', toggleDrawer);
+  if (overlay)   overlay.addEventListener('click', closeDrawer);
+}
+
+function toggleDrawer() {
+  const nav     = $('#main-nav');
+  const overlay = $('#drawer-overlay');
+  const open    = nav && nav.classList.toggle('open');
+  if (overlay) overlay.classList.toggle('open', open);
+}
+function closeDrawer() {
+  const nav     = $('#main-nav');
+  const overlay = $('#drawer-overlay');
+  if (nav)     nav.classList.remove('open');
+  if (overlay) overlay.classList.remove('open');
 }
 
 function switchView(view) {
@@ -198,7 +234,6 @@ function switchView(view) {
   $$('.nav-item[data-view]').forEach(a => a.classList.toggle('active', a.dataset.view === view));
   renderView();
 }
-
 function renderView() {
   switch (state.view) {
     case 'timeline':     renderTimeline();    break;
@@ -214,8 +249,7 @@ async function renderTimeline() {
   $('#topbar-actions').innerHTML = `<button class="btn btn-primary btn-sm" id="upload-btn">${icons.upload} 上传</button>`;
   $('#upload-btn').addEventListener('click', openUploadModal);
 
-  const content = $('#content');
-  content.innerHTML = `
+  $('#content').innerHTML = `
 <div class="toolbar">
   <span id="sel-bar" class="selected-bar">
     <span class="selected-count" id="sel-count">0</span> 张已选
@@ -229,11 +263,12 @@ async function renderTimeline() {
 
   $('#clear-sel-btn').addEventListener('click', clearSelection);
   $('#delete-sel-btn').addEventListener('click', deleteSelected);
-  $('#add-to-album-btn').addEventListener('click', openAddToAlbumModal);
+  $('#add-to-album-btn').addEventListener('click', () => openAlbumPickerModal(null));
 
   state.photos = [];
   state.timelineCursor = '';
   state.timelineHasMore = true;
+  await loadShareMap();   // b-2: 加载分享状态
   await loadMoreTimeline();
   observeLoadMore('load-more', loadMoreTimeline, () => state.timelineHasMore && !state.timelineLoading);
 }
@@ -273,13 +308,33 @@ function renderTimelineGroups(newPhotos, offset) {
   }
 }
 
-function makePhotoThumb(photo, listRef) {
+// ── 缩略图 ────────────────────────────────────────────
+function makePhotoThumb(photo, listRef, opts = {}) {
+  // opts.trashMode: 回收站模式，点击预览，不进入选择模式
   const div = el('div', 'photo-thumb');
   div.dataset.id = photo.id;
-  div.innerHTML = `<span class="check">${icons.check}</span><img loading="lazy" src="/media/thumbnails/${photo.uuid}" alt="${photo.original_name}">`;
 
-  // 左键点击：有已选中时切换选择，否则打开灯箱
+  // b-2: 分享徽章
+  const isShared = !!state.shareMap[`photo:${photo.id}`];
+  const shareBadge = isShared
+    ? `<span class="share-badge">${icons.shareSmall}</span>` : '';
+
+  div.innerHTML = `<span class="check">${icons.check}</span><img loading="lazy" src="/media/thumbnails/${photo.uuid}" alt="${photo.original_name}">${shareBadge}`;
+
+  // b-1: 点击 .check 区域直接进入/切换选择模式
+  const checkEl = div.querySelector('.check');
+  checkEl.addEventListener('click', e => {
+    e.stopPropagation();
+    toggleSelect(photo.id, div);
+  });
+
+  // 图片主体点击
   div.addEventListener('click', e => {
+    if (opts.trashMode) {
+      // b-4: 回收站模式只打开预览
+      openLightbox(listRef, listRef.indexOf(photo));
+      return;
+    }
     if (state.selected.size > 0) {
       toggleSelect(photo.id, div);
     } else {
@@ -287,52 +342,57 @@ function makePhotoThumb(photo, listRef) {
     }
   });
 
-  // 右键：上下文菜单（fix-6）
+  // 右键菜单
   div.addEventListener('contextmenu', e => {
     e.preventDefault();
-    showPhotoContextMenu(e.clientX, e.clientY, photo, div, listRef);
+    if (opts.trashMode) {
+      showTrashContextMenu(e.clientX, e.clientY, photo);
+    } else {
+      showPhotoContextMenu(e.clientX, e.clientY, photo, div, listRef);
+    }
   });
 
   if (state.selected.has(photo.id)) div.classList.add('selected');
   return div;
 }
 
-// 图片右键菜单（fix-6）
+// 时间线图片右键菜单
 function showPhotoContextMenu(x, y, photo, thumbEl, listRef) {
   const isSelected = state.selected.has(photo.id);
+  const isShared   = !!state.shareMap[`photo:${photo.id}`];
   showContextMenu(x, y, [
-    {
-      label: isSelected ? '取消选择' : '选择',
-      action: () => toggleSelect(photo.id, thumbEl),
-    },
+    { label: isSelected ? '取消选择' : '选择（点击勾选图标可快速选择）', action: () => toggleSelect(photo.id, thumbEl) },
     { label: '查看', action: () => openLightbox(listRef, listRef.indexOf(photo)) },
     '-',
-    { label: '添加到相册…', action: () => addSinglePhotoToAlbum(photo.id) },
-    { label: '分享…', action: () => openShareModal('photo', photo.id) },
+    { label: '添加到相册…', action: () => openAlbumPickerModal([photo.id]) },
+    { label: isShared ? '管理分享…' : '分享…', action: () => isShared ? openShareListModal('photo', photo.id) : openShareModal('photo', photo.id) },
     '-',
-    { label: '删除', action: () => deleteSinglePhoto(photo.id) },
+    { label: '删除', danger: true, action: () => deleteSinglePhoto(photo.id) },
+  ]);
+}
+
+// 回收站图片右键菜单 (b-4)
+function showTrashContextMenu(x, y, photo) {
+  showContextMenu(x, y, [
+    { label: '恢复到时间线', action: () => restorePhoto(photo.id) },
+    { label: '永久删除', danger: true, action: () => hardDeleteSinglePhoto(photo.id) },
   ]);
 }
 
 async function addSinglePhotoToAlbum(photoId) {
-  try {
-    const albums = await api.get('/api/albums');
-    if (!albums || !albums.length) { alert('还没有相册，请先新建相册'); return; }
-    const name = prompt('选择相册（输入名称或序号）：\n' + albums.map((a, i) => `${i+1}. ${a.name}`).join('\n'));
-    if (!name) return;
-    const album = albums.find(a => a.name === name) || albums[parseInt(name) - 1];
-    if (!album) { alert('未找到相册'); return; }
-    await api.post(`/api/albums/${album.id}/photos`, { photo_id: photoId });
-    alert(`已添加到「${album.name}」`);
-  } catch(e) { alert('操作失败: ' + (e.error || e)); }
+  openAlbumPickerModal([photoId]);
 }
 
 async function deleteSinglePhoto(photoId) {
   if (!confirm('确定要将这张照片移入回收站吗？')) return;
-  try {
-    await api.del(`/api/photos/${photoId}`);
-    switchView('timeline');
-  } catch(e) { alert('删除失败: ' + (e.error || e)); }
+  try { await api.del(`/api/photos/${photoId}`); switchView('timeline'); }
+  catch(e) { alert('删除失败: ' + (e.error || e)); }
+}
+
+async function hardDeleteSinglePhoto(photoId) {
+  if (!confirm('确定要永久删除这张照片吗？此操作不可恢复。')) return;
+  try { await api.del(`/api/photos/${photoId}`); switchView('trash'); }
+  catch(e) { alert('删除失败: ' + (e.error || e)); }
 }
 
 // ── 选择 ─────────────────────────────────────────────
@@ -369,12 +429,11 @@ async function renderAlbums() {
   $('#topbar-actions').innerHTML = `<button class="btn btn-primary btn-sm" id="new-album-btn">${icons.plus} 新建相册</button>`;
   $('#new-album-btn').addEventListener('click', openCreateAlbumModal);
 
-  const content = $('#content');
-  content.innerHTML = `<div id="album-grid-wrap"></div>`;
+  $('#content').innerHTML = `<div id="album-grid-wrap"></div>`;
   try {
     state.albums = await api.get('/api/albums');
     renderAlbumGrid();
-  } catch(e) { content.innerHTML = `<p style="color:var(--danger)">加载失败</p>`; }
+  } catch(e) { $('#content').innerHTML = `<p style="color:var(--danger)">加载失败</p>`; }
 }
 
 function renderAlbumGrid() {
@@ -413,23 +472,17 @@ async function openAlbumDetail(album) {
   $$('.nav-item[data-view]').forEach(a => a.classList.toggle('active', a.dataset.view === 'albums'));
   renderAlbumDetail();
 }
-
 async function renderAlbumDetail() {
   const album = state.currentAlbum;
   $('#topbar-title').textContent = album.name;
   $('#topbar-actions').innerHTML = `<button class="btn btn-sm" id="back-albums-btn">← 返回相册</button>`;
   $('#back-albums-btn').addEventListener('click', () => { state.view = 'albums'; renderAlbums(); });
 
-  const content = $('#content');
-  content.innerHTML = `<div id="album-groups"></div><div class="load-more" id="load-more"><div class="spinner"></div>加载中…</div>`;
-
-  state.albumPhotos = [];
-  state.albumCursor = '';
-  state.albumHasMore = true;
+  $('#content').innerHTML = `<div id="album-groups"></div><div class="load-more" id="load-more"><div class="spinner"></div>加载中…</div>`;
+  state.albumPhotos = []; state.albumCursor = ''; state.albumHasMore = true;
   await loadMoreAlbumPhotos();
   observeLoadMore('load-more', loadMoreAlbumPhotos, () => state.albumHasMore && !state.albumLoading);
 }
-
 async function loadMoreAlbumPhotos() {
   if (state.albumLoading || !state.albumHasMore || !state.currentAlbum) return;
   state.albumLoading = true;
@@ -444,7 +497,6 @@ async function loadMoreAlbumPhotos() {
   } catch(e) { console.error(e); }
   finally { state.albumLoading = false; updateLoadMoreUI('load-more', state.albumHasMore); }
 }
-
 function renderAlbumGroups(newPhotos) {
   const container = $('#album-groups');
   if (!container) return;
@@ -466,22 +518,21 @@ function renderAlbumGroups(newPhotos) {
   }
 }
 
-// ── 回收站 ────────────────────────────────────────────
+// ── 回收站 (b-4 修复) ─────────────────────────────────
 async function renderTrash() {
   $('#topbar-title').textContent = '回收站';
   $('#topbar-actions').innerHTML = `<button class="btn btn-danger btn-sm" id="empty-trash-btn">${icons.trash} 清空回收站</button>`;
   $('#empty-trash-btn').addEventListener('click', emptyTrash);
 
-  const content = $('#content');
-  content.innerHTML = `<div id="trash-groups"></div><div class="load-more" id="load-more"><div class="spinner"></div>加载中…</div>`;
+  $('#content').innerHTML = `
+<p style="font-size:.82rem;color:var(--text2);margin-bottom:12px">左键点击预览，右键查看恢复/删除选项</p>
+<div id="trash-groups"></div>
+<div class="load-more" id="load-more"><div class="spinner"></div>加载中…</div>`;
 
-  state.trashPhotos = [];
-  state.trashCursor = '';
-  state.trashHasMore = true;
+  state.trashPhotos = []; state.trashCursor = ''; state.trashHasMore = true;
   await loadMoreTrash();
   observeLoadMore('load-more', loadMoreTrash, () => state.trashHasMore && !state.trashLoading);
 }
-
 async function loadMoreTrash() {
   if (state.trashLoading || !state.trashHasMore) return;
   state.trashLoading = true;
@@ -495,7 +546,6 @@ async function loadMoreTrash() {
   } catch(e) { console.error(e); }
   finally { state.trashLoading = false; updateLoadMoreUI('load-more', state.trashHasMore); }
 }
-
 function renderTrashGroups(newPhotos) {
   const container = $('#trash-groups');
   if (!container) return;
@@ -513,22 +563,15 @@ function renderTrashGroups(newPhotos) {
       container.appendChild(group);
     }
     const grid = group.querySelector('.photo-grid');
-    photos.forEach(p => {
-      const thumb = makePhotoThumb(p, state.trashPhotos);
-      // 回收站中覆盖点击为恢复操作
-      thumb.onclick = null;
-      thumb.addEventListener('click', () => restorePhoto(p.id));
-      grid.appendChild(thumb);
-    });
+    // b-4: 传入 trashMode:true，点击只预览，恢复通过右键菜单
+    photos.forEach(p => grid.appendChild(makePhotoThumb(p, state.trashPhotos, { trashMode: true })));
   }
 }
-
 async function emptyTrash() {
   if (!confirm('确定要永久删除回收站中所有照片吗？此操作不可恢复。')) return;
   try { await api.del('/api/trash'); switchView('trash'); }
   catch(e) { alert('操作失败: ' + (e.error || e)); }
 }
-
 async function restorePhoto(id) {
   try { await api.post(`/api/photos/${id}/restore`, {}); switchView('trash'); }
   catch(e) { alert('恢复失败: ' + (e.error || e)); }
@@ -565,29 +608,25 @@ function renderLightbox() {
   <div class="lightbox-info" id="lb-info"></div>
 </div>`;
 }
-
 function bindGlobal() {
-  // 关闭右键菜单
   document.addEventListener('click', () => closeContextMenu());
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeContextMenu(); });
-
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeContextMenu();
+    if (!$('#lightbox').classList.contains('open')) return;
+    if (e.key === 'Escape')     closeLightbox();
+    if (e.key === 'ArrowLeft')  lbNav(-1);
+    if (e.key === 'ArrowRight') lbNav(1);
+  });
   document.addEventListener('click', e => {
     if (e.target.closest('#lb-close')) closeLightbox();
     if (e.target.closest('#lb-prev'))  lbNav(-1);
     if (e.target.closest('#lb-next'))  lbNav(1);
     if (e.target.closest('#lb-share')) lbShare();
   });
-  document.addEventListener('keydown', e => {
-    if (!$('#lightbox').classList.contains('open')) return;
-    if (e.key === 'Escape')     closeLightbox();
-    if (e.key === 'ArrowLeft')  lbNav(-1);
-    if (e.key === 'ArrowRight') lbNav(1);
-  });
 }
-
 function openLightbox(photos, index) {
   state.lightboxPhotos = photos;
-  state.lightboxIndex  = index;
+  state.lightboxIndex  = Math.max(0, index);
   $('#lightbox').classList.add('open');
   lbRender();
 }
@@ -605,21 +644,21 @@ function lbRender() {
   $('#lb-title').textContent = p.original_name;
   $('#lb-prev').classList.toggle('hidden', state.lightboxIndex === 0);
   $('#lb-next').classList.toggle('hidden', state.lightboxIndex === state.lightboxPhotos.length - 1);
-  const info = $('#lb-info');
   const items = [
     ['拍摄时间', formatDate(p.taken_at)],
     ['尺寸', p.width && p.height ? `${p.width} × ${p.height}` : '—'],
     ['大小', formatSize(p.size)],
     ['文件名', p.original_name],
   ];
-  info.innerHTML = items.map(([k, v]) => `<div class="lb-info-item"><span>${k}</span><span>${v}</span></div>`).join('');
+  $('#lb-info').innerHTML = items.map(([k, v]) => `<div class="lb-info-item"><span>${k}</span><span>${v}</span></div>`).join('');
 }
 async function lbShare() {
   const p = state.lightboxPhotos[state.lightboxIndex];
   if (!p) return;
-  // 先关闭灯箱，再打开分享弹窗，避免层级冲突（fix-4 辅助方案）
   closeLightbox();
-  openShareModal('photo', p.id);
+  const isShared = !!state.shareMap[`photo:${p.id}`];
+  if (isShared) openShareListModal('photo', p.id);
+  else openShareModal('photo', p.id);
 }
 
 // ── 上传模态框 ────────────────────────────────────────
@@ -640,45 +679,30 @@ function renderUploadModal() {
   </div>
 </div>`;
 }
-
 let _uploadZoneBound = false;
-
 function openUploadModal() {
-  const modal = $('#upload-modal');
-  modal.classList.add('open');
-  // fix-2：每次打开清空上次的进度列表
+  $('#upload-modal').classList.add('open');
   $('#upload-queue').innerHTML = '';
-  // fix-3：重置文件 input，避免选同一文件不触发 change
   const input = $('#file-input');
   if (input) input.value = '';
-  // 只绑定一次事件
-  if (!_uploadZoneBound) {
-    _uploadZoneBound = true;
-    bindUploadZone();
-  }
+  if (!_uploadZoneBound) { _uploadZoneBound = true; bindUploadZone(); }
 }
 function closeUploadModal() { $('#upload-modal').classList.remove('open'); }
-
 function bindUploadZone() {
   const zone = $('#drop-zone');
   const input = $('#file-input');
   $('#upload-close-btn').addEventListener('click', () => { closeUploadModal(); switchView('timeline'); });
-  zone.addEventListener('click', e => {
-    // 防止点击 input 自身时二次触发
-    if (e.target !== input) input.click();
-  });
+  zone.addEventListener('click', e => { if (e.target !== input) input.click(); });
   zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
   zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('drag-over'); handleFiles(e.dataTransfer.files); });
   input.addEventListener('change', () => { if (input.files.length) handleFiles(input.files); });
 }
-
 async function handleFiles(fileList) {
   const files = [...fileList].filter(f => f.type.startsWith('image/'));
   if (!files.length) return;
   const queue = $('#upload-queue');
   for (const file of files) {
-    // fix-3：用唯一 ID 而非文件名，避免重复文件名冲突
     const id = uid();
     const row = el('div', 'upload-item');
     row.innerHTML = `<span class="up-name">${file.name}</span><div style="flex:1"><div class="progress-bar"><div class="progress-fill" style="width:0%" id="prog-${id}"></div></div></div><span class="up-status" id="stat-${id}">等待中</span>`;
@@ -686,7 +710,6 @@ async function handleFiles(fileList) {
     uploadFile(file, id);
   }
 }
-
 async function uploadFile(file, id) {
   const prog = $(`#prog-${id}`);
   const stat = $(`#stat-${id}`);
@@ -740,23 +763,74 @@ async function createAlbum() {
   } catch(e) { alert('创建失败: ' + (e.error || e)); }
 }
 
-// ── 批量添加到相册 ────────────────────────────────────
-async function openAddToAlbumModal() {
-  if (!state.selected.size) return;
+// ── 相册选择弹窗 (b-3) ───────────────────────────────
+function renderAlbumPickerModal() {
+  return `<div class="modal-overlay" id="album-picker-modal">
+  <div class="modal" style="width:480px">
+    <div class="modal-title">${icons.album} 选择相册</div>
+    <div class="album-picker-grid" id="album-picker-grid"></div>
+    <div style="font-size:.8rem;color:var(--text2);margin-top:10px" id="album-picker-hint"></div>
+    <div class="modal-footer">
+      <button class="btn" id="album-picker-cancel">取消</button>
+      <button class="btn btn-primary" id="album-picker-confirm">添加</button>
+    </div>
+  </div>
+</div>`;
+}
+
+let _pickerPhotoIds = null;
+let _pickerSelected = null;
+
+async function openAlbumPickerModal(photoIds) {
+  // photoIds: null=用已选集合, 数组=指定图片
+  _pickerPhotoIds = photoIds;
+  _pickerSelected = null;
+  const modal = $('#album-picker-modal');
+  modal.classList.add('open');
+  $('#album-picker-hint').textContent = '';
+
+  const grid = $('#album-picker-grid');
+  grid.innerHTML = '<div style="padding:16px;color:var(--text2)">加载中…</div>';
+
   try {
     const albums = await api.get('/api/albums');
-    if (!albums || !albums.length) { alert('还没有相册，请先新建相册'); return; }
-    const name = prompt('选择相册（输入名称或序号）：\n' + albums.map((a, i) => `${i+1}. ${a.name}`).join('\n'));
-    if (!name) return;
-    const album = albums.find(a => a.name === name) || albums[parseInt(name) - 1];
-    if (!album) { alert('未找到相册'); return; }
-    for (const id of state.selected) {
-      try { await api.post(`/api/albums/${album.id}/photos`, { photo_id: id }); }
-      catch(e) { console.error(e); }
+    if (!albums || !albums.length) {
+      grid.innerHTML = `<div style="padding:16px;color:var(--text2)">还没有相册，请先新建相册</div>`;
+      return;
     }
-    alert(`已将 ${state.selected.size} 张照片添加到「${album.name}」`);
-    clearSelection();
-  } catch(e) { alert('操作失败'); }
+    grid.innerHTML = '';
+    albums.forEach(a => {
+      const item = el('div', 'album-picker-item');
+      item.innerHTML = `<div class="album-picker-cover">${icons.photo}</div><div class="album-picker-name">${a.name} (${a.photo_count||0})</div>`;
+      item.addEventListener('click', () => {
+        $$('.album-picker-item.picked').forEach(i => i.classList.remove('picked'));
+        item.classList.add('picked');
+        _pickerSelected = a;
+      });
+      grid.appendChild(item);
+    });
+  } catch(e) { grid.innerHTML = `<div style="color:var(--danger)">加载失败</div>`; }
+
+  $('#album-picker-cancel').onclick = () => modal.classList.remove('open');
+  $('#album-picker-confirm').onclick = confirmAlbumPicker;
+}
+
+async function confirmAlbumPicker() {
+  if (!_pickerSelected) { $('#album-picker-hint').textContent = '请先选择一个相册'; return; }
+  const album = _pickerSelected;
+  const ids = _pickerPhotoIds || [...state.selected];
+  if (!ids.length) { $('#album-picker-hint').textContent = '没有选中的图片'; return; }
+
+  $('#album-picker-confirm').disabled = true;
+  let ok = 0, fail = 0;
+  for (const id of ids) {
+    try { await api.post(`/api/albums/${album.id}/photos`, { photo_id: id }); ok++; }
+    catch(e) { fail++; }
+  }
+  $('#album-picker-confirm').disabled = false;
+  $('#album-picker-modal').classList.remove('open');
+  alert(`已添加 ${ok} 张到「${album.name}」${fail ? `，${fail} 张失败` : ''}`);
+  if (_pickerPhotoIds === null) clearSelection();
 }
 
 // ── 分享模态框 ────────────────────────────────────────
@@ -788,10 +862,9 @@ function renderShareModal() {
 let _shareTarget = null;
 function openShareModal(type, targetId) {
   _shareTarget = { type, targetId };
-  const modal = $('#share-modal');
-  modal.classList.add('open');
+  $('#share-modal').classList.add('open');
   $('#share-result').style.display = 'none';
-  $('#share-cancel-btn').onclick = () => modal.classList.remove('open');
+  $('#share-cancel-btn').onclick = () => { $('#share-modal').classList.remove('open'); };
   $('#share-confirm-btn').onclick = generateShareLink;
 }
 async function generateShareLink() {
@@ -801,17 +874,84 @@ async function generateShareLink() {
   if (days > 0) body.expires_in_days = days;
   try {
     const link = await api.post('/api/shares', body);
+    // 更新 shareMap
+    const key = `${link.type}:${link.target_id}`;
+    if (!state.shareMap[key]) state.shareMap[key] = [];
+    state.shareMap[key].push(link);
+
     const url = `${location.origin}/s/${link.token}`;
     const input = $('#share-link-input');
     input.value = url;
     $('#share-result').style.display = '';
-    // 移除旧监听再绑定，避免重复绑定
     const newInput = input.cloneNode(true);
     input.parentNode.replaceChild(newInput, input);
-    newInput.addEventListener('click', () => {
-      navigator.clipboard.writeText(url).then(() => alert('已复制链接'));
-    });
+    newInput.addEventListener('click', () => navigator.clipboard.writeText(url).then(() => alert('已复制链接')));
   } catch(e) { alert('生成失败: ' + (e.error || e)); }
+}
+
+// ── 分享列表弹窗 (b-2) ───────────────────────────────
+function renderShareListModal() {
+  return `<div class="modal-overlay" id="share-list-modal">
+  <div class="modal" style="width:480px">
+    <div class="modal-title">${icons.share} 管理分享链接</div>
+    <div id="share-list-content"></div>
+    <div class="modal-footer">
+      <button class="btn" id="share-list-close">关闭</button>
+      <button class="btn btn-primary" id="share-list-add">新建分享…</button>
+    </div>
+  </div>
+</div>`;
+}
+
+let _shareListTarget = null;
+function openShareListModal(type, targetId) {
+  _shareListTarget = { type, targetId };
+  const modal = $('#share-list-modal');
+  modal.classList.add('open');
+  renderShareList();
+  $('#share-list-close').onclick = () => modal.classList.remove('open');
+  $('#share-list-add').onclick = () => {
+    modal.classList.remove('open');
+    openShareModal(type, targetId);
+  };
+}
+
+function renderShareList() {
+  const key   = `${_shareListTarget.type}:${_shareListTarget.targetId}`;
+  const links = state.shareMap[key] || [];
+  const wrap  = $('#share-list-content');
+  if (!links.length) {
+    wrap.innerHTML = `<p style="color:var(--text2);padding:12px 0">暂无分享链接</p>`;
+    return;
+  }
+  wrap.innerHTML = '';
+  links.forEach(l => {
+    const url = `${location.origin}/s/${l.token}`;
+    const exp = l.expires_at ? `过期：${formatDate(l.expires_at)}` : '永不过期';
+    const row = el('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:.85rem;';
+    row.innerHTML = `
+      <div style="flex:1;overflow:hidden">
+        <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${url}</div>
+        <div style="color:var(--text2);font-size:.75rem;margin-top:2px">${exp}</div>
+      </div>
+      <button class="btn btn-sm" data-copy="${url}">复制</button>
+      <button class="btn btn-sm btn-danger" data-del="${l.id}">删除</button>`;
+    row.querySelector('[data-copy]').addEventListener('click', e => {
+      navigator.clipboard.writeText(e.target.dataset.copy).then(() => alert('已复制'));
+    });
+    row.querySelector('[data-del]').addEventListener('click', async e => {
+      const id = parseInt(e.target.dataset.del);
+      try {
+        await api.del(`/api/shares/${id}`);
+        // 从 shareMap 移除
+        const key2 = `${_shareListTarget.type}:${_shareListTarget.targetId}`;
+        state.shareMap[key2] = (state.shareMap[key2] || []).filter(x => x.id !== id);
+        renderShareList();
+      } catch(ex) { alert('删除失败'); }
+    });
+    wrap.appendChild(row);
+  });
 }
 
 // ── 登出 ──────────────────────────────────────────────

@@ -128,6 +128,28 @@ func TestGetPhotoByUUID_Success(t *testing.T) {
 	}
 }
 
+func TestGetPhotoByUUIDAny_IncludesDeleted(t *testing.T) {
+	db := newTestDB(t)
+	p := makePhoto(1, time.Now())
+	db.SavePhoto(p)
+	db.SoftDeletePhoto(p.ID, 1, 1)
+
+	// 普通查询不到
+	got, _ := db.GetPhotoByUUID(p.UUID, 1)
+	if got != nil {
+		t.Error("软删除后 GetPhotoByUUID 不应该返回")
+	}
+
+	// Any 查询得到
+	got, err := db.GetPhotoByUUIDAny(p.UUID, 1)
+	if err != nil || got == nil {
+		t.Fatalf("GetPhotoByUUIDAny 应该返回软删除图片: %v", err)
+	}
+	if got.DeletedAt == nil {
+		t.Error("DeletedAt 应该不为 nil")
+	}
+}
+
 func TestListPhotos_Pagination(t *testing.T) {
 	db := newTestDB(t)
 	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)

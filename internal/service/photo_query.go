@@ -23,9 +23,14 @@ func (s *PhotoService) GetPhoto(id int64, userID int64) (*storage.Photo, error) 
 	return s.repo.GetPhotoByID(id, userID)
 }
 
-// GetPhotoByUUID 通过 UUID 获取单张图片
+// GetPhotoByUUID ��过 UUID 获取单张图片（不含软删除）
 func (s *PhotoService) GetPhotoByUUID(uuid string, userID int64) (*storage.Photo, error) {
 	return s.repo.GetPhotoByUUID(uuid, userID)
+}
+
+// GetPhotoByUUIDAny 通过 UUID 获取图片，包含软删除（用于文件服务）
+func (s *PhotoService) GetPhotoByUUIDAny(uuid string, userID int64) (*storage.Photo, error) {
+	return s.repo.GetPhotoByUUIDAny(uuid, userID)
 }
 
 // DeletePhoto 软删除图片（移入回收站）

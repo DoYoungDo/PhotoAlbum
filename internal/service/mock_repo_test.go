@@ -55,6 +55,15 @@ func (m *mockRepo) GetPhotoByUUID(uuid string, userID int64) (*storage.Photo, er
 	return nil, nil
 }
 
+func (m *mockRepo) GetPhotoByUUIDAny(uuid string, userID int64) (*storage.Photo, error) {
+	for _, p := range m.photos {
+		if p.UUID == uuid && p.UploadedBy == userID {
+			return p, nil
+		}
+	}
+	return nil, nil
+}
+
 func (m *mockRepo) ListPhotos(params storage.ListPhotosParams) (*storage.PhotoPage, error) {
 	var photos []*storage.Photo
 	for _, p := range m.photos {

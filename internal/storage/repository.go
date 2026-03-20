@@ -14,6 +14,9 @@ type Repository interface {
 	// GetPhotoByUUID 按 UUID 查询图片（不返回已删除的）
 	GetPhotoByUUID(uuid string, userID int64) (*Photo, error)
 
+	// GetPhotoByUUIDAny 按 UUID 查询图片（包含已软删除，用于文件服务）
+	GetPhotoByUUIDAny(uuid string, userID int64) (*Photo, error)
+
 	// ListPhotos 查询用户图片（时间线，游标分页，不包含已删除）
 	ListPhotos(params ListPhotosParams) (*PhotoPage, error)
 

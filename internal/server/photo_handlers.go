@@ -216,7 +216,8 @@ func (s *Server) handleServePhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uuid := strings.TrimSuffix(r.PathValue("uuid"), filepath.Ext(r.PathValue("uuid")))
-	photo, err := s.photoService.GetPhotoByUUID(uuid, userID)
+	// 使用 Any 版本，允许回收站中的图片也能被访问
+	photo, err := s.photoService.GetPhotoByUUIDAny(uuid, userID)
 	if err != nil || photo == nil {
 		writeError(w, http.StatusNotFound, "图片不存在")
 		return
@@ -230,7 +231,8 @@ func (s *Server) handleServeThumbnail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	uuid := strings.TrimSuffix(r.PathValue("uuid"), filepath.Ext(r.PathValue("uuid")))
-	photo, err := s.photoService.GetPhotoByUUID(uuid, userID)
+	// 使用 Any 版本，允许回收站中的图片缩略图也能被访问
+	photo, err := s.photoService.GetPhotoByUUIDAny(uuid, userID)
 	if err != nil || photo == nil {
 		writeError(w, http.StatusNotFound, "图片不存在")
 		return

@@ -31,7 +31,15 @@ func (s *DB) CreateAlbum(album *storage.Album) error {
 func (s *DB) GetAlbumByID(id int64, userID int64) (*storage.Album, error) {
 	row := s.db.QueryRow(`
 		SELECT a.id, a.name, a.description, a.cover_photo_id, a.created_by, a.created_at,
-		       COUNT(p.id) as photo_count
+		       COUNT(p.id) as photo_count,
+		       COALESCE(
+		         (SELECT ph.uuid FROM photos ph
+		          WHERE ph.id = a.cover_photo_id AND ph.deleted_at IS NULL LIMIT 1),
+		         (SELECT ph.uuid FROM photos ph
+		          INNER JOIN album_photos ap2 ON ap2.photo_id = ph.id
+		          WHERE ap2.album_id = a.id AND ph.deleted_at IS NULL
+		          ORDER BY ph.taken_at DESC LIMIT 1)
+		       ) as cover_uuid
 		FROM albums a
 		LEFT JOIN album_photos ap ON ap.album_id = a.id
 		LEFT JOIN photos p ON p.id = ap.photo_id AND p.deleted_at IS NULL
@@ -45,11 +53,19 @@ func (s *DB) GetAlbumByID(id int64, userID int64) (*storage.Album, error) {
 	return album, err
 }
 
-// ListAlbums 查询用户所有相册（photo_count 不含已软删除的图片）
+// ListAlbums 查询用户所有相册（photo_count 不含已软删除的图片，附带封面 UUID）
 func (s *DB) ListAlbums(userID int64) ([]*storage.Album, error) {
 	rows, err := s.db.Query(`
 		SELECT a.id, a.name, a.description, a.cover_photo_id, a.created_by, a.created_at,
-		       COUNT(p.id) as photo_count
+		       COUNT(p.id) as photo_count,
+		       COALESCE(
+		         (SELECT ph.uuid FROM photos ph
+		          WHERE ph.id = a.cover_photo_id AND ph.deleted_at IS NULL LIMIT 1),
+		         (SELECT ph.uuid FROM photos ph
+		          INNER JOIN album_photos ap2 ON ap2.photo_id = ph.id
+		          WHERE ap2.album_id = a.id AND ph.deleted_at IS NULL
+		          ORDER BY ph.taken_at DESC LIMIT 1)
+		       ) as cover_uuid
 		FROM albums a
 		LEFT JOIN album_photos ap ON ap.album_id = a.id
 		LEFT JOIN photos p ON p.id = ap.photo_id AND p.deleted_at IS NULL
@@ -189,15 +205,19 @@ func scanAlbum(row interface {
 }) (*storage.Album, error) {
 	var a storage.Album
 	var coverPhotoID sql.NullInt64
+	var coverUUID sql.NullString
 	err := row.Scan(
 		&a.ID, &a.Name, &a.Description, &coverPhotoID,
-		&a.CreatedBy, &a.CreatedAt, &a.PhotoCount,
+		&a.CreatedBy, &a.CreatedAt, &a.PhotoCount, &coverUUID,
 	)
 	if err != nil {
 		return nil, err
 	}
 	if coverPhotoID.Valid {
 		a.CoverPhotoID = &coverPhotoID.Int64
+	}
+	if coverUUID.Valid {
+		a.CoverUUID = coverUUID.String
 	}
 	return &a, nil
 }

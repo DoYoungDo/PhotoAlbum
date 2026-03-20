@@ -187,3 +187,33 @@ func TestAlbumPhotoCount(t *testing.T) {
 		t.Errorf("ListAlbums 软删除后期望 PhotoCount=2，得到 %d", albums[0].PhotoCount)
 	}
 }
+
+func TestAlbumCoverUUID(t *testing.T) {
+	db := newTestDB(t)
+	album := &storage.Album{Name: "封面测试", CreatedBy: 1, CreatedAt: time.Now()}
+	db.CreateAlbum(album)
+
+	// 无图片时 CoverUUID 为空
+	got, _ := db.GetAlbumByID(album.ID, 1)
+	if got.CoverUUID != "" {
+		t.Errorf("无图片时 CoverUUID 应为空，得到 %s", got.CoverUUID)
+	}
+
+	// 添加图片后 CoverUUID 应为该图片的 UUID
+	p := makePhoto(1, time.Now())
+	p.UUID = "cover-test-uuid"
+	db.SavePhoto(p)
+	db.AddPhotoToAlbum(album.ID, p.ID, 1)
+
+	got, _ = db.GetAlbumByID(album.ID, 1)
+	if got.CoverUUID != "cover-test-uuid" {
+		t.Errorf("期望 CoverUUID=cover-test-uuid，得到 %s", got.CoverUUID)
+	}
+
+	// 软删除图片后 CoverUUID 应再次为空
+	db.SoftDeletePhoto(p.ID, 1, 1)
+	got, _ = db.GetAlbumByID(album.ID, 1)
+	if got.CoverUUID != "" {
+		t.Errorf("软删除后 CoverUUID 应为空，得到 %s", got.CoverUUID)
+	}
+}

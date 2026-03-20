@@ -24,6 +24,7 @@ type Album struct {
 	Name         string    `json:"name"`
 	Description  string    `json:"description"`
 	CoverPhotoID *int64    `json:"cover_photo_id"` // nil 时自动取最新图片
+	CoverUUID    string    `json:"cover_uuid"`     // 封面图片 UUID，查询时填充，前端用于显示缩略图
 	CreatedBy    int64     `json:"created_by"`
 	CreatedAt    time.Time `json:"created_at"`
 	PhotoCount   int       `json:"photo_count"` // 非数据库字段，查询时聚合

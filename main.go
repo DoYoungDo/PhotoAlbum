@@ -2,9 +2,14 @@ package main
 
 import (
 	"fmt"
+	"net/http"
 	"os"
+	"path/filepath"
 
 	"photoalbum/internal/config"
+	"photoalbum/internal/server"
+	"photoalbum/internal/service"
+	"photoalbum/internal/storage/sqlite"
 )
 
 func main() {
@@ -32,5 +37,24 @@ func main() {
 
 	fmt.Printf("配置加载成功，服务将运行在端口 %d\n", cfg.Port)
 	fmt.Printf("图片存储路径: %s\n", cfg.StoragePath)
-	// TODO: 启动 HTTP 服务
+
+	dbPath := filepath.Join(cfg.StoragePath, "photoalbum.db")
+	repo, err := sqlite.New(dbPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "错误: 初始化数据库失败: %v\n", err)
+		os.Exit(1)
+	}
+	defer repo.Close()
+
+	photoService := service.NewPhotoService(repo, cfg.StoragePath)
+	albumService := service.NewAlbumService(repo)
+	shareService := service.NewShareService(repo)
+	app := server.New(cfg, photoService, albumService, shareService)
+
+	addr := fmt.Sprintf(":%d", cfg.Port)
+	fmt.Printf("HTTP 服务已启动: http://127.0.0.1%s\n", addr)
+	if err := http.ListenAndServe(addr, app); err != nil {
+		fmt.Fprintf(os.Stderr, "错误: HTTP 服务启动失败: %v\n", err)
+		os.Exit(1)
+	}
 }

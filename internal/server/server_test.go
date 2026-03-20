@@ -1,0 +1,330 @@
+package server
+
+import (
+	"bytes"
+	"encoding/json"
+	"image"
+	"image/jpeg"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"photoalbum/internal/config"
+	"photoalbum/internal/service"
+	"photoalbum/internal/storage/sqlite"
+)
+
+func createTestJPEGBytes(w, h int) []byte {
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	var buf bytes.Buffer
+	_ = jpeg.Encode(&buf, img, nil)
+	return buf.Bytes()
+}
+
+// newTestServer 创建用于测试的 Server，使用 SQLite 临时数据库
+func newTestServer(t *testing.T) *Server {
+	t.Helper()
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+
+	repo, err := sqlite.New(dbPath)
+	if err != nil {
+		t.Fatalf("创建测试数据库失败: %v", err)
+	}
+	t.Cleanup(func() { repo.Close() })
+
+	// alice 用户，密码 password123（bcrypt hash 预生成）
+	cfg := &config.Config{
+		Port:        8080,
+		StoragePath: dir,
+		JWTSecret:   "test-secret",
+		Users: []config.User{
+			{Username: "alice", PasswordHash: "$2a$10$m2CWsTFrqFNGPW/bGg4UluO.WX/e.rgEkX4yxHJI.VABfOyGA8BA2"},
+		},
+	}
+
+	photoSvc := service.NewPhotoService(repo, dir)
+	albumSvc := service.NewAlbumService(repo)
+	shareSvc := service.NewShareService(repo)
+	return New(cfg, photoSvc, albumSvc, shareSvc)
+}
+
+// withAuth 生成带有认证 cookie 的请求构造函数
+func withAuth(t *testing.T, s *Server) func(method, path string, body []byte) *http.Request {
+	t.Helper()
+	token, err := s.generateToken("alice")
+	if err != nil {
+		t.Fatalf("生成 token 失败: %v", err)
+	}
+	return func(method, path string, body []byte) *http.Request {
+		var req *http.Request
+		if body != nil {
+			req = httptest.NewRequest(method, path, bytes.NewReader(body))
+		} else {
+			req = httptest.NewRequest(method, path, nil)
+		}
+		req.AddCookie(&http.Cookie{Name: authCookieName, Value: token})
+		return req
+	}
+}
+
+// --- JWT 测试 ---
+
+func TestGenerateAndParseToken(t *testing.T) {
+	s := newTestServer(t)
+	token, err := s.generateToken("alice")
+	if err != nil {
+		t.Fatalf("生成 token 失败: %v", err)
+	}
+	username, err := s.parseToken(token)
+	if err != nil {
+		t.Fatalf("解析 token 失败: %v", err)
+	}
+	if username != "alice" {
+		t.Fatalf("期望 alice，得到 %s", username)
+	}
+}
+
+func TestParseToken_Invalid(t *testing.T) {
+	s := newTestServer(t)
+	if _, err := s.parseToken("invalid-token"); err == nil {
+		t.Fatal("无效 token 应该返回错误")
+	}
+}
+
+func TestParseToken_WrongSecret(t *testing.T) {
+	s := newTestServer(t)
+	s2 := *s
+	s2.cfg = &config.Config{JWTSecret: "other-secret"}
+	token, _ := s2.generateToken("alice")
+	if _, err := s.parseToken(token); err == nil {
+		t.Fatal("不同 secret 签发的 token 应该解析失败")
+	}
+}
+
+// --- Auth 中间件测试 ---
+
+func TestAuthMiddleware_RedirectsHTMLRequests(t *testing.T) {
+	s := newTestServer(t)
+	// 页面路径（非 /api/）未登录应该跳转到 /login
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("期望 303，得到 %d", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "/login" {
+		t.Fatalf("期望跳转到 /login，得到 %s", loc)
+	}
+}
+
+func TestAuthMiddleware_Returns401ForAPI(t *testing.T) {
+	s := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/photos", nil)
+	req.Header.Set("Accept", "application/json")
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("期望 401，得到 %d", w.Code)
+	}
+}
+
+func TestAuthMiddleware_AllowsValidToken(t *testing.T) {
+	s := newTestServer(t)
+	newReq := withAuth(t, s)
+	req := newReq(http.MethodGet, "/api/photos", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("有效 token 期望 200，得到 %d", w.Code)
+	}
+}
+
+// --- Login / Logout 测试 ---
+
+func TestLogin_Success(t *testing.T) {
+	s := newTestServer(t)
+	body, _ := json.Marshal(map[string]string{"username": "alice", "password": "password123"})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d，body=%s", w.Code, w.Body.String())
+	}
+	found := false
+	for _, c := range w.Result().Cookies() {
+		if c.Name == authCookieName {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("登录后应该返回认证 cookie")
+	}
+}
+
+func TestLogin_WrongPassword(t *testing.T) {
+	s := newTestServer(t)
+	body, _ := json.Marshal(map[string]string{"username": "alice", "password": "wrongpass"})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("期望 401，得到 %d", w.Code)
+	}
+}
+
+func TestLogin_UnknownUser(t *testing.T) {
+	s := newTestServer(t)
+	body, _ := json.Marshal(map[string]string{"username": "nobody", "password": "pass"})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("期望 401，得到 %d", w.Code)
+	}
+}
+
+func TestLogout_ClearsCookie(t *testing.T) {
+	s := newTestServer(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+}
+
+// --- 页面测试 ---
+
+func TestLoginPage_Returns200(t *testing.T) {
+	s := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+}
+
+func TestIndexPage_WithAuth(t *testing.T) {
+	s := newTestServer(t)
+	newReq := withAuth(t, s)
+	req := newReq(http.MethodGet, "/", nil)
+	req.Header.Set("Accept", "text/html")
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+}
+
+func TestStaticFile(t *testing.T) {
+	if _, err := os.Stat(filepath.Join("web", "static", "app.css")); err != nil {
+		t.Skipf("静态文件不存在: %v", err)
+	}
+	s := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/static/app.css", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+}
+
+// --- Photo API 测试 ---
+
+func TestListPhotos_AuthRequired(t *testing.T) {
+	s := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/photos", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("期望 401，得到 %d", w.Code)
+	}
+}
+
+func TestListPhotos_Empty(t *testing.T) {
+	s := newTestServer(t)
+	newReq := withAuth(t, s)
+	req := newReq(http.MethodGet, "/api/photos", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d，body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestDeletePhoto_NotFound(t *testing.T) {
+	s := newTestServer(t)
+	newReq := withAuth(t, s)
+	req := newReq(http.MethodDelete, "/api/photos/9999", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("期望 400，得到 %d", w.Code)
+	}
+}
+
+// --- Album API 测试 ---
+
+func TestCreateAlbum_API(t *testing.T) {
+	s := newTestServer(t)
+	newReq := withAuth(t, s)
+	body, _ := json.Marshal(map[string]string{"name": "测试相册", "description": "描述"})
+	req := newReq(http.MethodPost, "/api/albums", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("期望 201，得到 %d，body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestListAlbums_Empty(t *testing.T) {
+	s := newTestServer(t)
+	newReq := withAuth(t, s)
+	req := newReq(http.MethodGet, "/api/albums", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+}
+
+func TestGetAlbum_NotFound(t *testing.T) {
+	s := newTestServer(t)
+	newReq := withAuth(t, s)
+	req := newReq(http.MethodGet, "/api/albums/9999", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("期望 404，得到 %d", w.Code)
+	}
+}
+
+// --- Share API 测试 ---
+
+func TestCreateShare_API(t *testing.T) {
+	s := newTestServer(t)
+	newReq := withAuth(t, s)
+	body, _ := json.Marshal(map[string]any{"type": "photo", "target_id": int64(1)})
+	req := newReq(http.MethodPost, "/api/shares", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("期望 201，得到 %d，body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestGetShare_NotFound(t *testing.T) {
+	s := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/s/nonexistent-token", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("期望 404，得到 %d", w.Code)
+	}
+}

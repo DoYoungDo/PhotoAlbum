@@ -3,6 +3,7 @@ package image
 import (
 	"bytes"
 	"image"
+	"image/color"
 	"image/jpeg"
 	"image/png"
 	"testing"
@@ -201,5 +202,44 @@ func TestGenerateThumbnail_CreatesDirectory(t *testing.T) {
 
 	if err := GenerateThumbnail(r, "image/jpeg", destPath); err != nil {
 		t.Fatalf("应该自动创建目录: %v", err)
+	}
+}
+
+func TestOrientedDimensions_Rotate90(t *testing.T) {
+	w, h := orientedDimensions(800, 600, 6)
+	if w != 600 || h != 800 {
+		t.Fatalf("期望 600x800，得到 %dx%d", w, h)
+	}
+}
+
+func TestApplyOrientation_Rotate90CW(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 2, 3))
+	red := color.RGBA{R: 255, A: 255}
+	green := color.RGBA{G: 255, A: 255}
+	blue := color.RGBA{B: 255, A: 255}
+	img.Set(0, 0, red)
+	img.Set(1, 0, green)
+	img.Set(0, 2, blue)
+
+	rotated := applyOrientation(img, 6)
+	if rotated.Bounds().Dx() != 3 || rotated.Bounds().Dy() != 2 {
+		t.Fatalf("顺时针旋转后期望 3x2，得到 %dx%d", rotated.Bounds().Dx(), rotated.Bounds().Dy())
+	}
+	if !colorEqual(rotated.At(2, 0), red) {
+		t.Fatal("原左上角红色像素应移动到新图右上角")
+	}
+	if !colorEqual(rotated.At(2, 1), green) {
+		t.Fatal("原右上角绿色像素应移动到新图右下角")
+	}
+	if !colorEqual(rotated.At(0, 0), blue) {
+		t.Fatal("原左下角蓝色像素应移动到新图左上角")
+	}
+}
+
+func TestApplyOrientation_None(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 4, 5))
+	result := applyOrientation(img, 1)
+	if result.Bounds().Dx() != 4 || result.Bounds().Dy() != 5 {
+		t.Fatalf("无方向变换时尺寸不应变化，得到 %dx%d", result.Bounds().Dx(), result.Bounds().Dy())
 	}
 }

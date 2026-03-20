@@ -36,6 +36,7 @@ type Meta struct {
 type EXIFData struct {
 	Make         string    `json:"make,omitempty"`
 	Model        string    `json:"model,omitempty"`
+	Orientation  int       `json:"orientation,omitempty"`
 	TakenAt      time.Time `json:"taken_at,omitempty"`
 	Width        int       `json:"width,omitempty"`
 	Height       int       `json:"height,omitempty"`
@@ -79,9 +80,16 @@ func ExtractMeta(rs io.ReadSeeker, filename string, fileCreateTime time.Time) (*
 		return nil, fmt.Errorf("解析图片尺寸失败: %w", err)
 	}
 
+	width, height := cfg.Width, cfg.Height
+	if exifData != nil {
+		width, height = orientedDimensions(width, height, exifData.Orientation)
+		exifData.Width = width
+		exifData.Height = height
+	}
+
 	return &Meta{
-		Width:    cfg.Width,
-		Height:   cfg.Height,
+		Width:    width,
+		Height:   height,
 		MimeType: mimeType,
 		TakenAt:  takenAt,
 		EXIF:     exifData,
@@ -114,6 +122,13 @@ func parseEXIF(rs io.ReadSeeker) (*EXIFData, time.Time, error) {
 		data.Model, _ = tag.StringVal()
 	}
 
+	// 方向信息，常见手机照片会依赖该字段决定显示方向
+	if tag, err := x.Get(exif.Orientation); err == nil {
+		if v, err := tag.Int(0); err == nil {
+			data.Orientation = v
+		}
+	}
+
 	// 光圈
 	if tag, err := x.Get(exif.FNumber); err == nil {
 		data.FNumber = tag.String()
@@ -144,6 +159,15 @@ func parseEXIF(rs io.ReadSeeker) (*EXIFData, time.Time, error) {
 	}
 
 	return data, takenAt, nil
+}
+
+func orientedDimensions(width, height, orientation int) (int, int) {
+	switch orientation {
+	case 5, 6, 7, 8:
+		return height, width
+	default:
+		return width, height
+	}
 }
 
 // DetectMimeType 根据文件名后缀检测 MIME 类型

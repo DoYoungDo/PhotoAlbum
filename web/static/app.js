@@ -130,6 +130,8 @@ const state = {
   // d-2: 上传队列状态
   uploadJobs: [],
   uploadRunning: false,
+  // h-1: 用于刷新后恢复相册详情页
+  currentAlbumID: null,
 };
 
 // ── 分享状态加载 ─────────────────────────────────────
@@ -249,7 +251,10 @@ function closeDrawer() {
 function switchView(view) {
   state.view = view;
   state.selected.clear();
-  setHashView(view); // c-2: 同步到 hash
+  if (view !== 'album-detail') {
+    state.currentAlbumID = null;
+    setHashView(view); // c-2: 同步到 hash
+  }
   $$('.nav-item[data-view]').forEach(a => a.classList.toggle('active', a.dataset.view === view));
   renderView();
 }
@@ -508,15 +513,33 @@ function makeAlbumCard(album) {
 // ── 相册详情 ──────────────────────────────────────────
 async function openAlbumDetail(album) {
   state.currentAlbum = album;
+  state.currentAlbumID = album.id;
   state.albumPhotos = [];
   state.albumCursor = '';
   state.albumHasMore = true;
   state.view = 'album-detail';
+  setHashView('album-detail', album.id);
   $$('.nav-item[data-view]').forEach(a => a.classList.toggle('active', a.dataset.view === 'albums'));
   renderAlbumDetail();
 }
 async function renderAlbumDetail() {
-  const album = state.currentAlbum;
+  let album = state.currentAlbum;
+  if (!album && state.currentAlbumID) {
+    try {
+      album = await api.get(`/api/albums/${state.currentAlbumID}`);
+      state.currentAlbum = album;
+    } catch (e) {
+      // 相册不存在或加载失败时回退到相册列表
+      state.currentAlbum = null;
+      state.currentAlbumID = null;
+      switchView('albums');
+      return;
+    }
+  }
+  if (!album) {
+    switchView('albums');
+    return;
+  }
   $('#topbar-title').textContent = album.name;
   $('#topbar-actions').innerHTML = `<button class="btn btn-danger btn-sm" id="delete-album-btn">删除相册</button><button class="btn btn-sm" id="back-albums-btn">← 返回相册</button>`;
   $('#delete-album-btn').addEventListener('click', async () => {
@@ -529,7 +552,7 @@ async function renderAlbumDetail() {
       alert('删除相册失败: ' + (e.error || e));
     }
   });
-  $('#back-albums-btn').addEventListener('click', () => { state.view = 'albums'; renderAlbums(); });
+  $('#back-albums-btn').addEventListener('click', () => switchView('albums'));
 
   $('#content').innerHTML = `<div id="album-groups"></div><div class="load-more" id="load-more"><div class="spinner"></div>加载中…</div>`;
   state.albumPhotos = []; state.albumCursor = ''; state.albumHasMore = true;
@@ -1154,12 +1177,27 @@ initTheme();
 // c-2: 从 hash 恢复视图，支持刷新后保持页面
 function getHashView() {
   const h = location.hash.replace('#', '');
-  return ['timeline','albums','trash'].includes(h) ? h : 'timeline';
+  if (['timeline','albums','trash'].includes(h)) {
+    return { view: h, albumID: null };
+  }
+  if (h.startsWith('album/')) {
+    const id = Number(h.split('/')[1]);
+    if (Number.isFinite(id) && id > 0) {
+      return { view: 'album-detail', albumID: id };
+    }
+  }
+  return { view: 'timeline', albumID: null };
 }
-function setHashView(view) {
+function setHashView(view, albumID = null) {
+  if (view === 'album-detail' && albumID) {
+    history.replaceState(null, '', `#album/${albumID}`);
+    return;
+  }
   if (['timeline','albums','trash'].includes(view)) {
     history.replaceState(null, '', '#' + view);
   }
 }
-state.view = getHashView();
+const initialRoute = getHashView();
+state.view = initialRoute.view;
+state.currentAlbumID = initialRoute.albumID;
 renderApp();

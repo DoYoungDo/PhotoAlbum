@@ -821,12 +821,17 @@ function bindUploadZone() {
   $('#retry-failed-btn').addEventListener('click', retryFailedUploads);
   zone.addEventListener('click', e => {
     if (e.target === input) return;
-    // 桌面浏览器对隐藏 input 的 click 更严格，优先使用 showPicker。
-    if (typeof input.showPicker === 'function') {
-      input.showPicker();
-    } else {
-      input.click();
+    // 某些桌面浏览器虽然实现了 showPicker，但对当前隐藏 input 调用会失败。
+    // 这里优先尝试 showPicker，失败时立即回退到 input.click()。
+    try {
+      if (typeof input.showPicker === 'function') {
+        input.showPicker();
+        return;
+      }
+    } catch (_) {
+      // ignore and fallback
     }
+    input.click();
   });
   zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
   zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));

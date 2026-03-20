@@ -957,7 +957,8 @@ async function createAlbum() {
   try {
     await api.post('/api/albums', { name, description: $('#album-desc-input').value.trim() });
     $('#create-album-modal').classList.remove('open');
-    renderAlbums();
+    // 通过 switchView 而不是直接 render，确保菜单高亮和 hash 保持一致。
+    switchView('albums');
   } catch(e) { alert('创建失败: ' + (e.error || e)); }
 }
 

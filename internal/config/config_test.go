@@ -1,7 +1,10 @@
 package config
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
+	"golang.org/x/crypto/bcrypt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -149,5 +152,54 @@ func TestGenerateSecret_Unique(t *testing.T) {
 	s2, _ := generateSecret(32)
 	if s1 == s2 {
 		t.Error("两次生成的 secret 不应该相同")
+	}
+}
+
+func TestRunInitWizardWithReader_CreatesDefaultUser(t *testing.T) {
+	storagePath := filepath.Join(t.TempDir(), "photos")
+	input := bytes.NewBufferString("9090\n" + storagePath + "\nadmin1\npassword123\n")
+	output := &bytes.Buffer{}
+
+	cfg, err := runInitWizardWithReader(bufio.NewReader(input), output)
+	if err != nil {
+		t.Fatalf("初始化向导失败: %v", err)
+	}
+	if cfg.Port != 9090 {
+		t.Fatalf("期望端口 9090，得到 %d", cfg.Port)
+	}
+	if cfg.StoragePath != storagePath {
+		t.Fatalf("期望存储路径 %s，得到 %s", storagePath, cfg.StoragePath)
+	}
+	if len(cfg.Users) != 1 {
+		t.Fatalf("期望 1 个默认用户，得到 %d", len(cfg.Users))
+	}
+	if cfg.Users[0].Username != "admin1" {
+		t.Fatalf("期望默认用户名 admin1，得到 %s", cfg.Users[0].Username)
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(cfg.Users[0].PasswordHash), []byte("password123")); err != nil {
+		t.Fatalf("默认用户密码哈希校验失败: %v", err)
+	}
+	if _, err := os.Stat(storagePath); err != nil {
+		t.Fatalf("存储目录应已创建: %v", err)
+	}
+}
+
+func TestRunInitWizardWithReader_InvalidPasswordRetries(t *testing.T) {
+	storagePath := filepath.Join(t.TempDir(), "photos")
+	input := bytes.NewBufferString("\n" + storagePath + "\n\n123\npassword123\n")
+	output := &bytes.Buffer{}
+
+	cfg, err := runInitWizardWithReader(bufio.NewReader(input), output)
+	if err != nil {
+		t.Fatalf("初始化向导失败: %v", err)
+	}
+	if cfg.Port != 8080 {
+		t.Fatalf("期望默认端口 8080，得到 %d", cfg.Port)
+	}
+	if cfg.Users[0].Username != "admin" {
+		t.Fatalf("期望默认用户名 admin，得到 %s", cfg.Users[0].Username)
+	}
+	if !bytes.Contains(output.Bytes(), []byte("密码长度不能少于6位")) {
+		t.Fatal("应提示密码长度不足并重试")
 	}
 }

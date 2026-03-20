@@ -10,13 +10,33 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+func hashPassword(password string) (string, error) {
+	if len(password) < 6 {
+		return "", fmt.Errorf("密码长度不能少于6位")
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", fmt.Errorf("生成密码哈希失败: %w", err)
+	}
+	return string(hash), nil
+}
+
+func newUser(username, password string) (User, error) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return User{}, fmt.Errorf("用户名不能为空")
+	}
+	hash, err := hashPassword(password)
+	if err != nil {
+		return User{}, err
+	}
+	return User{Username: username, PasswordHash: hash}, nil
+}
+
 // AddUser 向配置文件中添加一个新用户
 func AddUser(username, password string) error {
 	if strings.TrimSpace(username) == "" {
 		return fmt.Errorf("用户名不能为空")
-	}
-	if len(password) < 6 {
-		return fmt.Errorf("密码长度不能少于6位")
 	}
 
 	cfg, err := Load()
@@ -34,16 +54,12 @@ func AddUser(username, password string) error {
 		}
 	}
 
-	// 生成 bcrypt 哈希
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	user, err := newUser(username, password)
 	if err != nil {
-		return fmt.Errorf("生成密码哈希失败: %w", err)
+		return err
 	}
 
-	cfg.Users = append(cfg.Users, User{
-		Username:     username,
-		PasswordHash: string(hash),
-	})
+	cfg.Users = append(cfg.Users, user)
 
 	if err := cfg.Save(); err != nil {
 		return fmt.Errorf("保存配置失败: %w", err)

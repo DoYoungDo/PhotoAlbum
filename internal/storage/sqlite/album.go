@@ -27,13 +27,14 @@ func (s *DB) CreateAlbum(album *storage.Album) error {
 	return nil
 }
 
-// GetAlbumByID 按 ID 查询相册，附带图片数量
+// GetAlbumByID 按 ID 查询相册，附带图片数量（不含已软删除的图片）
 func (s *DB) GetAlbumByID(id int64, userID int64) (*storage.Album, error) {
 	row := s.db.QueryRow(`
 		SELECT a.id, a.name, a.description, a.cover_photo_id, a.created_by, a.created_at,
-		       COUNT(ap.photo_id) as photo_count
+		       COUNT(p.id) as photo_count
 		FROM albums a
 		LEFT JOIN album_photos ap ON ap.album_id = a.id
+		LEFT JOIN photos p ON p.id = ap.photo_id AND p.deleted_at IS NULL
 		WHERE a.id = ? AND a.created_by = ?
 		GROUP BY a.id`, id, userID)
 
@@ -44,13 +45,14 @@ func (s *DB) GetAlbumByID(id int64, userID int64) (*storage.Album, error) {
 	return album, err
 }
 
-// ListAlbums 查询用户所有相册
+// ListAlbums 查询用户所有相册（photo_count 不含已软删除的图片）
 func (s *DB) ListAlbums(userID int64) ([]*storage.Album, error) {
 	rows, err := s.db.Query(`
 		SELECT a.id, a.name, a.description, a.cover_photo_id, a.created_by, a.created_at,
-		       COUNT(ap.photo_id) as photo_count
+		       COUNT(p.id) as photo_count
 		FROM albums a
 		LEFT JOIN album_photos ap ON ap.album_id = a.id
+		LEFT JOIN photos p ON p.id = ap.photo_id AND p.deleted_at IS NULL
 		WHERE a.created_by = ?
 		GROUP BY a.id
 		ORDER BY a.created_at DESC`, userID)

@@ -160,15 +160,30 @@ func TestAlbumPhotoCount(t *testing.T) {
 	album := &storage.Album{Name: "计数测试", CreatedBy: 1, CreatedAt: time.Now()}
 	db.CreateAlbum(album)
 
+	photos := make([]*storage.Photo, 3)
 	for i := 0; i < 3; i++ {
 		p := makePhoto(1, time.Now())
 		p.UUID = "count-" + string(rune('a'+i))
 		db.SavePhoto(p)
 		db.AddPhotoToAlbum(album.ID, p.ID, 1)
+		photos[i] = p
 	}
 
 	got, _ := db.GetAlbumByID(album.ID, 1)
 	if got.PhotoCount != 3 {
 		t.Errorf("期望 PhotoCount=3，得到 %d", got.PhotoCount)
+	}
+
+	// 软删除一张后计数应该减少
+	db.SoftDeletePhoto(photos[0].ID, 1, 1)
+	got, _ = db.GetAlbumByID(album.ID, 1)
+	if got.PhotoCount != 2 {
+		t.Errorf("软删除后期望 PhotoCount=2，得到 %d", got.PhotoCount)
+	}
+
+	// ListAlbums 也要验证
+	albums, _ := db.ListAlbums(1)
+	if len(albums) == 0 || albums[0].PhotoCount != 2 {
+		t.Errorf("ListAlbums 软删除后期望 PhotoCount=2，得到 %d", albums[0].PhotoCount)
 	}
 }

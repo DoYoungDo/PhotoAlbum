@@ -96,6 +96,20 @@ func (s *DB) GetPhotoByID(id int64, userID int64) (*storage.Photo, error) {
 	return p, err
 }
 
+// GetPhotoByIDAny 按 ID 查询图片，包含已软删除
+func (s *DB) GetPhotoByIDAny(id int64, userID int64) (*storage.Photo, error) {
+	row := s.db.QueryRow(`
+		SELECT id, uuid, original_name, mime_type, size, width, height,
+		       taken_at, uploaded_at, uploaded_by, deleted_at, deleted_by
+		FROM photos
+		WHERE id = ? AND uploaded_by = ?`, id, userID)
+	p, err := scanPhoto(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return p, err
+}
+
 // GetPhotoByUUID 按 UUID 查询图片（不含软删除）
 func (s *DB) GetPhotoByUUID(uuid string, userID int64) (*storage.Photo, error) {
 	row := s.db.QueryRow(`

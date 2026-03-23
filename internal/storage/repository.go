@@ -11,6 +11,9 @@ type Repository interface {
 	// GetPhotoByID 按 ID 查询图片（不返回已删除的）
 	GetPhotoByID(id int64, userID int64) (*Photo, error)
 
+	// GetPhotoByIDAny 按 ID 查询图片（包含已软删除，用于文件服务和永久删除）
+	GetPhotoByIDAny(id int64, userID int64) (*Photo, error)
+
 	// GetPhotoByUUID 按 UUID 查询图片（不返回已删除的）
 	GetPhotoByUUID(uuid string, userID int64) (*Photo, error)
 

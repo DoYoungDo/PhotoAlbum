@@ -46,6 +46,14 @@ func (m *mockRepo) GetPhotoByID(id int64, userID int64) (*storage.Photo, error) 
 	return p, nil
 }
 
+func (m *mockRepo) GetPhotoByIDAny(id int64, userID int64) (*storage.Photo, error) {
+	p, ok := m.photos[id]
+	if !ok || p.UploadedBy != userID {
+		return nil, nil
+	}
+	return p, nil
+}
+
 func (m *mockRepo) GetPhotoByUUID(uuid string, userID int64) (*storage.Photo, error) {
 	for _, p := range m.photos {
 		if p.UUID == uuid && p.UploadedBy == userID && p.DeletedAt == nil {

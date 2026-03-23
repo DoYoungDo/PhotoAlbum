@@ -473,6 +473,70 @@ func TestDeletePhoto_NotFound(t *testing.T) {
 	}
 }
 
+func TestHardDeleteTrashedPhoto_Success(t *testing.T) {
+	s := newTestServer(t)
+	newReq := withAuth(t, s)
+
+	// 上传一张图片
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	part, err := mw.CreateFormFile("photo", "trash-delete.jpg")
+	if err != nil {
+		t.Fatalf("创建 multipart 失败: %v", err)
+	}
+	_, _ = part.Write(createTestJPEGBytes(64, 64))
+	_ = mw.WriteField("client_last_modified_ms", strconv.FormatInt(time.Now().UnixMilli(), 10))
+	_ = mw.Close()
+	uploadReq := newReq(http.MethodPost, "/api/photos/upload", body.Bytes())
+	uploadReq.Header.Set("Content-Type", mw.FormDataContentType())
+	uploadRec := httptest.NewRecorder()
+	s.ServeHTTP(uploadRec, uploadReq)
+	if uploadRec.Code != http.StatusCreated {
+		t.Fatalf("上传期望 201，得到 %d，body=%s", uploadRec.Code, uploadRec.Body.String())
+	}
+	var photo struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal(uploadRec.Body.Bytes(), &photo); err != nil {
+		t.Fatalf("解析上传响应失败: %v", err)
+	}
+
+	// 先移入回收站
+	delReq := newReq(http.MethodDelete, "/api/photos/"+strconv.FormatInt(photo.ID, 10), nil)
+	delRec := httptest.NewRecorder()
+	s.ServeHTTP(delRec, delReq)
+	if delRec.Code != http.StatusOK {
+		t.Fatalf("删除到回收站期望 200，得到 %d，body=%s", delRec.Code, delRec.Body.String())
+	}
+
+	// 再永久删除
+	hardReq := newReq(http.MethodDelete, "/api/trash/"+strconv.FormatInt(photo.ID, 10), nil)
+	hardRec := httptest.NewRecorder()
+	s.ServeHTTP(hardRec, hardReq)
+	if hardRec.Code != http.StatusOK {
+		t.Fatalf("永久删除期望 200，得到 %d，body=%s", hardRec.Code, hardRec.Body.String())
+	}
+
+	// 回收站应为空
+	trashReq := newReq(http.MethodGet, "/api/trash", nil)
+	trashRec := httptest.NewRecorder()
+	s.ServeHTTP(trashRec, trashReq)
+	if trashRec.Code != http.StatusOK {
+		t.Fatalf("回收站查询期望 200，得到 %d", trashRec.Code)
+	}
+	var page struct {
+		Photos []any `json:"photos"`
+	}
+	if err := json.Unmarshal(trashRec.Body.Bytes(), &page); err != nil {
+		t.Fatalf("解析回收站响应失败: %v", err)
+	}
+	if len(page.Photos) != 0 {
+		t.Fatalf("期望回收站为空，实际 %d 条", len(page.Photos))
+	}
+
+	time.Sleep(50 * time.Millisecond)
+}
+
 // --- Album API 测试 ---
 
 func TestCreateAlbum_API(t *testing.T) {

@@ -424,7 +424,7 @@ async function deleteSinglePhoto(photoId) {
 
 async function hardDeleteSinglePhoto(photoId) {
   if (!confirm('确定要永久删除这张照片吗？此操作不可恢复。')) return;
-  try { await api.del(`/api/photos/${photoId}`); switchView('trash'); }
+  try { await api.del(`/api/trash/${photoId}`); switchView('trash'); }
   catch(e) { alert('删除失败: ' + (e.error || e)); }
 }
 

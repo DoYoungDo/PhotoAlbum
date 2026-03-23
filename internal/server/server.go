@@ -85,6 +85,7 @@ func (s *Server) registerRoutes() {
 
 	// 回收站 API
 	s.mux.HandleFunc("GET /api/trash", s.auth(s.handleListTrash))
+	s.mux.HandleFunc("DELETE /api/trash/{id}", s.auth(s.handleHardDeleteTrashedPhoto))
 	s.mux.HandleFunc("DELETE /api/trash", s.auth(s.handleEmptyTrash))
 
 	// 相册 API

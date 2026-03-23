@@ -307,6 +307,36 @@ body.selection-mode .date-select-all { display: inline-flex; }
 .modal-title { font-size: 1rem; font-weight: 700; margin-bottom: 16px; }
 .modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
 
+/* ===== Toast ===== */
+.toast-stack {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 1400;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+.toast {
+  min-width: 220px;
+  max-width: 360px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(30, 30, 30, .92);
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(0,0,0,.22);
+  font-size: .85rem;
+  line-height: 1.4;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity .18s ease, transform .18s ease;
+}
+.toast.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 /* ===== 工具栏 ===== */
 .toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
 .toolbar-spacer { flex: 1; }

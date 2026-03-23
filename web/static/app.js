@@ -41,6 +41,24 @@ function formatSize(bytes) {
   if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
   return (bytes / 1048576).toFixed(1) + ' MB';
 }
+function showToast(message, duration = 2200) {
+  let stack = document.getElementById('toast-stack');
+  if (!stack) {
+    stack = document.createElement('div');
+    stack.id = 'toast-stack';
+    stack.className = 'toast-stack';
+    document.body.appendChild(stack);
+  }
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.textContent = message;
+  stack.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('show'));
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 220);
+  }, duration);
+}
 function groupByDate(photos) {
   const groups = {};
   for (const p of photos) {
@@ -1187,7 +1205,7 @@ async function confirmAlbumPicker() {
   }
   $('#album-picker-confirm').disabled = false;
   $('#album-picker-modal').classList.remove('open');
-  alert(`已添加 ${ok} 张到「${album.name}」${fail ? `，${fail} 张失败` : ''}`);
+  showToast(`已添加 ${ok} 张到「${album.name}」${fail ? `，${fail} 张失败` : ''}`);
   if (_pickerPhotoIds === null) clearSelection();
 }
 

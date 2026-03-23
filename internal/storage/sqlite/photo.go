@@ -161,7 +161,9 @@ func (s *DB) ListPhotos(params storage.ListPhotosParams) (*storage.PhotoPage, er
 	}
 	defer rows.Close()
 
-	return collectPhotoPage(rows, limit)
+	return collectPhotoPage(rows, limit, func(p *storage.Photo) time.Time {
+		return p.TakenAt
+	})
 }
 
 // ListTrashedPhotos 查询回收站图片
@@ -201,11 +203,17 @@ func (s *DB) ListTrashedPhotos(params storage.ListPhotosParams) (*storage.PhotoP
 	}
 	defer rows.Close()
 
-	return collectPhotoPage(rows, limit)
+	return collectPhotoPage(rows, limit, func(p *storage.Photo) time.Time {
+		if p.DeletedAt != nil {
+			return *p.DeletedAt
+		}
+		return time.Time{}
+	})
 }
 
-// collectPhotoPage 收集分页结果，判断是否有更多
-func collectPhotoPage(rows *sql.Rows, limit int) (*storage.PhotoPage, error) {
+// collectPhotoPage 收集分页结果，判断是否有更多。
+// cursorTimeFn 决定当前分页使用哪个时间字段来生成下一页游标。
+func collectPhotoPage(rows *sql.Rows, limit int, cursorTimeFn func(*storage.Photo) time.Time) (*storage.PhotoPage, error) {
 	var photos []*storage.Photo
 	for rows.Next() {
 		p, err := scanPhoto(rows)
@@ -223,7 +231,7 @@ func collectPhotoPage(rows *sql.Rows, limit int) (*storage.PhotoPage, error) {
 		page.HasMore = true
 		photos = photos[:limit]
 		last := photos[len(photos)-1]
-		page.NextCursor = encodeCursor(last.TakenAt, last.ID)
+		page.NextCursor = encodeCursor(cursorTimeFn(last), last.ID)
 	}
 	page.Photos = photos
 	return page, nil

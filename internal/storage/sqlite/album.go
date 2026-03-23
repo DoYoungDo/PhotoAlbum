@@ -188,7 +188,9 @@ func (s *DB) ListAlbumPhotos(params storage.ListAlbumPhotosParams) (*storage.Pho
 	}
 	defer rows.Close()
 
-	return collectPhotoPage(rows, limit)
+	return collectPhotoPage(rows, limit, func(p *storage.Photo) time.Time {
+		return p.TakenAt
+	})
 }
 
 // IsPhotoInAlbum 检查图片是否在相册中

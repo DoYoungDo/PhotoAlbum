@@ -313,5 +313,76 @@ func TestDecodeCursor_Invalid(t *testing.T) {
 	}
 }
 
+func TestListPhotos_PaginationManySameTimestamp(t *testing.T) {
+	db := newTestDB(t)
+	base := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+
+	for i := 0; i < 200; i++ {
+		p := makePhoto(1, base)
+		p.UUID = fmt.Sprintf("same-ts-%03d", i)
+		if err := db.SavePhoto(p); err != nil {
+			t.Fatalf("保存第 %d 张图片失败: %v", i, err)
+		}
+	}
+
+	count := 0
+	cursor := ""
+	for {
+		page, err := db.ListPhotos(storage.ListPhotosParams{UserID: 1, Limit: 30, Cursor: cursor})
+		if err != nil {
+			t.Fatalf("分页查询失败: %v", err)
+		}
+		count += len(page.Photos)
+		if !page.HasMore {
+			break
+		}
+		if page.NextCursor == "" {
+			t.Fatal("HasMore=true 时 NextCursor 不应为空")
+		}
+		cursor = page.NextCursor
+	}
+
+	if count != 200 {
+		t.Fatalf("期望遍历 200 张图片，实际 %d 张", count)
+	}
+}
+
+func TestListTrashedPhotos_PaginationUsesDeletedAtCursor(t *testing.T) {
+	db := newTestDB(t)
+	baseTakenAt := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	for i := 0; i < 80; i++ {
+		p := makePhoto(1, baseTakenAt.Add(time.Duration(i)*time.Hour))
+		p.UUID = fmt.Sprintf("trash-%03d", i)
+		if err := db.SavePhoto(p); err != nil {
+			t.Fatalf("保存第 %d 张图片失败: %v", i, err)
+		}
+		if err := db.SoftDeletePhoto(p.ID, 1, 1); err != nil {
+			t.Fatalf("软删除第 %d 张图片失败: %v", i, err)
+		}
+	}
+
+	count := 0
+	cursor := ""
+	for {
+		page, err := db.ListTrashedPhotos(storage.ListPhotosParams{UserID: 1, Limit: 30, Cursor: cursor})
+		if err != nil {
+			t.Fatalf("回收站分页查询失败: %v", err)
+		}
+		count += len(page.Photos)
+		if !page.HasMore {
+			break
+		}
+		if page.NextCursor == "" {
+			t.Fatal("HasMore=true 时 NextCursor 不应为空")
+		}
+		cursor = page.NextCursor
+	}
+
+	if count != 80 {
+		t.Fatalf("期望遍历 80 张回收站图片，实际 %d 张", count)
+	}
+}
+
 // 确保测试文件不依赖 os 包报错
 var _ = os.DevNull

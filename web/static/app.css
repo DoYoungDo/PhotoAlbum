@@ -279,6 +279,23 @@ body.selection-mode .date-select-all { display: inline-flex; }
   max-height: 40vh;
   overflow-y: auto;
   padding-right: 4px;
+  scrollbar-color: var(--border) transparent;
+}
+.upload-queue::-webkit-scrollbar {
+  width: 10px;
+}
+.upload-queue::-webkit-scrollbar-track {
+  background: transparent;
+}
+.upload-queue::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.upload-queue::-webkit-scrollbar-thumb:hover {
+  background: var(--text2);
+  background-clip: padding-box;
 }
 .upload-item {
   display: flex; align-items: center; gap: 10px;

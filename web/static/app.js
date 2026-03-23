@@ -183,7 +183,7 @@ function showContextMenu(x, y, items) {
     btn.textContent = item.label;
     if (item.danger) btn.style.color = 'var(--danger)';
     btn.style.cssText += `display:block;width:100%;padding:8px 14px;background:none;border:none;
-      text-align:left;font-size:.88rem;cursor:pointer;`;
+      text-align:left;font-size:.88rem;cursor:pointer;color:${item.danger ? 'var(--danger)' : 'var(--text)'};`;
     btn.addEventListener('mouseenter', () => btn.style.background = 'var(--bg2)');
     btn.addEventListener('mouseleave', () => btn.style.background = 'none');
     btn.addEventListener('click', () => { closeContextMenu(); item.action(); });

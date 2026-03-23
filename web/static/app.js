@@ -310,7 +310,11 @@ async function loadMoreTimeline() {
     state.timelineHasMore = page.has_more || false;
     renderTimelineGroups(page.photos || [], state.photos.length - (page.photos || []).length);
   } catch (e) { console.error(e); }
-  finally { state.timelineLoading = false; updateLoadMoreUI('load-more', state.timelineHasMore); }
+  finally {
+    state.timelineLoading = false;
+    updateLoadMoreUI('load-more', state.timelineHasMore);
+    maybeLoadMoreImmediately('load-more', loadMoreTimeline, () => state.timelineHasMore && !state.timelineLoading);
+  }
 }
 
 function renderTimelineGroups(newPhotos, offset) {
@@ -594,7 +598,11 @@ async function loadMoreAlbumPhotos() {
     state.albumHasMore = page.has_more || false;
     renderAlbumGroups(page.photos || []);
   } catch(e) { console.error(e); }
-  finally { state.albumLoading = false; updateLoadMoreUI('load-more', state.albumHasMore); }
+  finally {
+    state.albumLoading = false;
+    updateLoadMoreUI('load-more', state.albumHasMore);
+    maybeLoadMoreImmediately('load-more', loadMoreAlbumPhotos, () => state.albumHasMore && !state.albumLoading);
+  }
 }
 function renderAlbumGroups(newPhotos) {
   const container = $('#album-groups');
@@ -655,7 +663,11 @@ async function loadMoreTrash() {
     state.trashHasMore = page.has_more || false;
     renderTrashGroups(page.photos || []);
   } catch(e) { console.error(e); }
-  finally { state.trashLoading = false; updateLoadMoreUI('load-more', state.trashHasMore); }
+  finally {
+    state.trashLoading = false;
+    updateLoadMoreUI('load-more', state.trashHasMore);
+    maybeLoadMoreImmediately('load-more', loadMoreTrash, () => state.trashHasMore && !state.trashLoading);
+  }
 }
 function renderTrashGroups(newPhotos) {
   const container = $('#trash-groups');
@@ -735,6 +747,19 @@ function updateLoadMoreUI(id, hasMore) {
   const e = document.getElementById(id);
   if (!e) return;
   e.style.display = hasMore ? '' : 'none';
+}
+
+// 当首屏内容不足、底部哨兵一直在可视区时，IntersectionObserver 可能只触发一次，
+// 这里在每次加载结束后主动检查一次，确保能继续把后续页面补出来。
+function maybeLoadMoreImmediately(id, loadFn, canLoad) {
+  const sentinel = document.getElementById(id);
+  if (!sentinel || !canLoad()) return;
+  const rect = sentinel.getBoundingClientRect();
+  if (rect.top <= window.innerHeight + 200) {
+    requestAnimationFrame(() => {
+      if (canLoad()) loadFn();
+    });
+  }
 }
 
 // ── 灯箱 ──────────────────────────────────────────────

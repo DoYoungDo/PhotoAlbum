@@ -1,3 +1,15 @@
-# Specify filepatterns you want git to ignore.
-
+# 构建产物
 build/
+dist/
+*.exe
+*.out
+
+# 运行时数据
+photos/
+*.db
+*.db-shm
+*.db-wal
+
+# 开发环境
+.DS_Store
+.hbuilderx/

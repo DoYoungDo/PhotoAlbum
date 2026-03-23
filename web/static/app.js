@@ -638,6 +638,7 @@ async function renderTrash() {
   <span id="trash-sel-bar" class="selected-bar">
     <span class="selected-count" id="trash-sel-count">0</span> 张已选
     <button class="btn btn-sm" style="background:rgba(255,255,255,.2);border-color:transparent;color:#fff" id="restore-sel-btn">${icons.prev} 批量恢复</button>
+    <button class="btn btn-sm" style="background:rgba(255,255,255,.2);border-color:transparent;color:#fff" id="hard-delete-sel-btn">${icons.trash} 批量删除</button>
     <button class="btn-icon" style="color:#fff" id="trash-clear-sel-btn">${icons.close}</button>
   </span>
 </div>
@@ -647,6 +648,7 @@ async function renderTrash() {
 
   $('#trash-clear-sel-btn').addEventListener('click', () => { clearSelection(); updateTrashSelBar(); });
   $('#restore-sel-btn').addEventListener('click', restoreSelected);
+  $('#hard-delete-sel-btn').addEventListener('click', hardDeleteSelected);
 
   state.trashPhotos = []; state.trashCursor = ''; state.trashHasMore = true;
   await loadMoreTrash();
@@ -730,6 +732,18 @@ async function restoreSelected() {
   for (const id of ids) {
     try { await api.post(`/api/photos/${id}/restore`, {}); }
     catch(e) { console.error('恢复失败:', id, e); }
+  }
+  switchView('trash');
+}
+
+async function hardDeleteSelected() {
+  if (!state.selected.size) return;
+  if (!confirm(`确定要永久删除选中的 ${state.selected.size} 张照片吗？此操作不可恢复。`)) return;
+  const ids = [...state.selected];
+  clearSelection();
+  for (const id of ids) {
+    try { await api.del(`/api/trash/${id}`); }
+    catch(e) { console.error('永久删除失败:', id, e); }
   }
   switchView('trash');
 }

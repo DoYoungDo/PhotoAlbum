@@ -331,7 +331,7 @@ async function loadMoreTimeline() {
   if (state.timelineLoading || !state.timelineHasMore) return;
   state.timelineLoading = true;
   try {
-    const url = '/api/photos' + (state.timelineCursor ? `?cursor=${encodeURIComponent(state.timelineCursor)}` : '');
+    const url = '/api/media' + (state.timelineCursor ? `?cursor=${encodeURIComponent(state.timelineCursor)}` : '');
     const page = await api.get(url);
     state.photos.push(...(page.photos || []));
     state.timelineCursor = page.next_cursor || '';

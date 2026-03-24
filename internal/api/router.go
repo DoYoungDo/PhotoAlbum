@@ -27,6 +27,7 @@ const tempMediaDirName = ".media-upload-tmp"
 type videoRegistrar interface {
 	RegisterUploadedVideo(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
 	GetPhotoByUUIDAny(uuid string, userID int64) (*storage.Photo, error)
+	GetTimeline(params storage.ListPhotosParams) (*storage.PhotoPage, error)
 	MediaPath(photo *storage.Photo) string
 	PosterPath(photo *storage.Photo) string
 }
@@ -53,11 +54,7 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 
 	media := r.Group("/api/media")
 	{
-		media.GET("", func(c *gin.Context) {
-			c.JSON(http.StatusNotImplemented, gin.H{
-				"error": "媒体接口尚未实现",
-			})
-		})
+		media.GET("", authMiddleware(cfg), handleListMedia(cfg, registrar))
 		media.POST("/upload", authMiddleware(cfg), handleUploadPlaceholder(cfg, registrar))
 	}
 
@@ -69,6 +66,30 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 	r.NoMethod(legacyHandler)
 
 	return r
+}
+
+func handleListMedia(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		page, err := registrar.GetTimeline(storage.ListPhotosParams{
+			UserID: userID,
+			Cursor: c.Query("cursor"),
+			Limit:  30,
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, page)
+	}
 }
 
 func handleServeMediaFile(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {

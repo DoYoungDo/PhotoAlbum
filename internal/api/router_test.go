@@ -21,10 +21,11 @@ import (
 )
 
 type stubRegistrar struct {
-	register   func(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
-	getByUUID  func(uuid string, userID int64) (*storage.Photo, error)
-	mediaPath  func(photo *storage.Photo) string
-	posterPath func(photo *storage.Photo) string
+	register    func(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
+	getByUUID   func(uuid string, userID int64) (*storage.Photo, error)
+	getTimeline func(params storage.ListPhotosParams) (*storage.PhotoPage, error)
+	mediaPath   func(photo *storage.Photo) string
+	posterPath  func(photo *storage.Photo) string
 }
 
 func (s stubRegistrar) RegisterUploadedVideo(input service.RegisterUploadedVideoInput) (*storage.Photo, error) {
@@ -33,6 +34,10 @@ func (s stubRegistrar) RegisterUploadedVideo(input service.RegisterUploadedVideo
 
 func (s stubRegistrar) GetPhotoByUUIDAny(uuid string, userID int64) (*storage.Photo, error) {
 	return s.getByUUID(uuid, userID)
+}
+
+func (s stubRegistrar) GetTimeline(params storage.ListPhotosParams) (*storage.PhotoPage, error) {
+	return s.getTimeline(params)
 }
 
 func (s stubRegistrar) MediaPath(photo *storage.Photo) string {
@@ -74,6 +79,26 @@ func okRegistrar() stubRegistrar {
 			MimeType:     "video/mp4",
 			UploadedBy:   userID,
 		}, nil
+	}, getTimeline: func(params storage.ListPhotosParams) (*storage.PhotoPage, error) {
+		return &storage.PhotoPage{Photos: []*storage.Photo{
+			{
+				ID:           1,
+				UUID:         "image-1",
+				OriginalName: "demo.jpg",
+				MediaKind:    storage.MediaKindImage,
+				MimeType:     "image/jpeg",
+				UploadedBy:   params.UserID,
+			},
+			{
+				ID:           2,
+				UUID:         "video-1",
+				OriginalName: "demo.mp4",
+				MediaKind:    storage.MediaKindVideo,
+				MimeType:     "video/mp4",
+				DurationMS:   12000,
+				UploadedBy:   params.UserID,
+			},
+		}, NextCursor: "", HasMore: false}, nil
 	}, mediaPath: mediaFilePath, posterPath: posterFilePath}
 }
 
@@ -142,15 +167,40 @@ func TestNewRouter_MediaPlaceholder(t *testing.T) {
 
 	router := NewRouter(testConfig(), legacy, okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusNotImplemented {
-		t.Fatalf("期望 501，得到 %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
 	}
-	if body := w.Body.String(); body == "" {
-		t.Fatal("占位接口应该返回错误信息")
+	var page struct {
+		Photos []struct {
+			ID        int64  `json:"id"`
+			MediaKind string `json:"media_kind"`
+		} `json:"photos"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+		t.Fatalf("解析媒体列表响应失败: %v", err)
+	}
+	if len(page.Photos) != 2 {
+		t.Fatalf("期望 2 条媒体，得到 %d", len(page.Photos))
+	}
+	if page.Photos[1].MediaKind != storage.MediaKindVideo {
+		t.Fatalf("期望第二条为视频，得到 %s", page.Photos[1].MediaKind)
+	}
+}
+
+func TestMediaList_RequiresAuth(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/api/media", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("期望 401，得到 %d", w.Code)
 	}
 }
 

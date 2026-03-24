@@ -470,13 +470,13 @@ async function addSinglePhotoToAlbum(photoId) {
 }
 
 async function deleteSinglePhoto(photoId) {
-  if (!confirm('确定要将这张照片移入回收站吗？')) return;
+  if (!confirm('确定要将这条照片/视频移入回收站吗？')) return;
   try { await api.del(`/api/photos/${photoId}`); switchView('timeline'); }
   catch(e) { alert('删除失败: ' + (e.error || e)); }
 }
 
 async function hardDeleteSinglePhoto(photoId) {
-  if (!confirm('确定要永久删除这张照片吗？此操作不可恢复。')) return;
+  if (!confirm('确定要永久删除这条照片/视频吗？此操作不可恢复。')) return;
   try { await api.del(`/api/trash/${photoId}`); switchView('trash'); }
   catch(e) { alert('删除失败: ' + (e.error || e)); }
 }
@@ -520,7 +520,7 @@ function selectAllInGroup(groupEl) {
 }
 async function deleteSelected() {
   if (!state.selected.size) return;
-  if (!confirm(`确定要删除选中的 ${state.selected.size} 张照片吗？`)) return;
+  if (!confirm(`确定要删除选中的 ${state.selected.size} 条照片/视频吗？`)) return;
   for (const id of state.selected) {
     try { await api.del(`/api/photos/${id}`); } catch (e) { console.error(e); }
   }
@@ -661,7 +661,7 @@ function renderAlbumGroups(newPhotos) {
   const container = $('#album-groups');
   if (!container) return;
   if (state.albumPhotos.length === 0 && newPhotos.length === 0) {
-    container.innerHTML = `<div class="empty">${icons.photo}<p>相册还没有照片</p></div>`;
+    container.innerHTML = `<div class="empty">${icons.photo}<p>相册里还没有照片/视频</p></div>`;
     return;
   }
   const groups = groupByDate(newPhotos);
@@ -757,7 +757,7 @@ function renderTrashGroups(newPhotos) {
   }
 }
 async function emptyTrash() {
-  if (!confirm('确定要永久删除回收站中所有照片吗？此操作不可恢复。')) return;
+  if (!confirm('确定要永久删除回收站中所有照片/视频吗？此操作不可恢复。')) return;
   try { await api.del('/api/trash'); switchView('trash'); }
   catch(e) { alert('操作失败: ' + (e.error || e)); }
 }
@@ -779,7 +779,7 @@ function updateTrashSelBar() {
 // c-5: 批量恢复选中图片
 async function restoreSelected() {
   if (!state.selected.size) return;
-  if (!confirm(`确定要恢复选中的 ${state.selected.size} 张照片吗？`)) return;
+  if (!confirm(`确定要恢复选中的 ${state.selected.size} 条照片/视频吗？`)) return;
   const ids = [...state.selected];
   clearSelection();
   for (const id of ids) {
@@ -791,7 +791,7 @@ async function restoreSelected() {
 
 async function hardDeleteSelected() {
   if (!state.selected.size) return;
-  if (!confirm(`确定要永久删除选中的 ${state.selected.size} 张照片吗？此操作不可恢复。`)) return;
+  if (!confirm(`确定要永久删除选中的 ${state.selected.size} 条照片/视频吗？此操作不可恢复。`)) return;
   const ids = [...state.selected];
   clearSelection();
   for (const id of ids) {

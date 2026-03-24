@@ -120,7 +120,7 @@ func (s *Server) handleUploadPhoto(w http.ResponseWriter, r *http.Request) {
 
 	file, header, err := r.FormFile("photo")
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "缺少 photo 文件字段")
+		writeError(w, http.StatusBadRequest, "缺少照片文件字段")
 		return
 	}
 	data, err := readUploadedFile(file)
@@ -154,7 +154,7 @@ func (s *Server) handleGetPhoto(w http.ResponseWriter, r *http.Request) {
 	if userID == 0 {
 		return
 	}
-	id, err := parseInt64Param(r.PathValue("id"), "图片ID")
+	id, err := parseInt64Param(r.PathValue("id"), "照片/视频ID")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -165,7 +165,7 @@ func (s *Server) handleGetPhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if photo == nil {
-		writeError(w, http.StatusNotFound, "图片不存在")
+		writeError(w, http.StatusNotFound, "照片/视频不存在")
 		return
 	}
 	writeJSON(w, http.StatusOK, photo)
@@ -186,7 +186,7 @@ func (s *Server) handleDownloadPhoto(w http.ResponseWriter, r *http.Request) {
 	if userID == 0 {
 		return
 	}
-	id, err := parseInt64Param(r.PathValue("id"), "图片ID")
+	id, err := parseInt64Param(r.PathValue("id"), "照片/视频ID")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -197,7 +197,7 @@ func (s *Server) handleDownloadPhoto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if photo == nil {
-		writeError(w, http.StatusNotFound, "图片不存在")
+		writeError(w, http.StatusNotFound, "照片/视频不存在")
 		return
 	}
 
@@ -242,7 +242,7 @@ func (s *Server) handleDeletePhoto(w http.ResponseWriter, r *http.Request) {
 	if userID == 0 {
 		return
 	}
-	id, err := parseInt64Param(r.PathValue("id"), "图片ID")
+	id, err := parseInt64Param(r.PathValue("id"), "照片/视频ID")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -259,7 +259,7 @@ func (s *Server) handleRestorePhoto(w http.ResponseWriter, r *http.Request) {
 	if userID == 0 {
 		return
 	}
-	id, err := parseInt64Param(r.PathValue("id"), "图片ID")
+	id, err := parseInt64Param(r.PathValue("id"), "照片/视频ID")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -305,7 +305,7 @@ func (s *Server) handleHardDeleteTrashedPhoto(w http.ResponseWriter, r *http.Req
 	if userID == 0 {
 		return
 	}
-	id, err := parseInt64Param(r.PathValue("id"), "图片ID")
+	id, err := parseInt64Param(r.PathValue("id"), "照片/视频ID")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -326,7 +326,7 @@ func (s *Server) handleServePhoto(w http.ResponseWriter, r *http.Request) {
 	// 使用 Any 版本，允许回收站中的图片也能被访问
 	photo, err := s.photoService.GetPhotoByUUIDAny(uuid, userID)
 	if err != nil || photo == nil {
-		writeError(w, http.StatusNotFound, "图片不存在")
+		writeError(w, http.StatusNotFound, "照片/视频不存在")
 		return
 	}
 	http.ServeFile(w, r, s.photoService.PhotoPath(photo))
@@ -341,7 +341,7 @@ func (s *Server) handleServeThumbnail(w http.ResponseWriter, r *http.Request) {
 	// 使用 Any 版本，允许回收站中的图片缩略图也能被访问
 	photo, err := s.photoService.GetPhotoByUUIDAny(uuid, userID)
 	if err != nil || photo == nil {
-		writeError(w, http.StatusNotFound, "图片不存在")
+		writeError(w, http.StatusNotFound, "照片/视频不存在")
 		return
 	}
 	http.ServeFile(w, r, s.photoService.ThumbnailPath(photo))

@@ -50,7 +50,7 @@ func (s *PhotoService) PermanentlyDeletePhoto(id int64, userID int64) error {
 		return err
 	}
 	if photo == nil || photo.DeletedAt == nil {
-		return fmt.Errorf("图片不在回收站中")
+		return fmt.Errorf("照片/视频不在回收站中")
 	}
 	if err := s.repo.HardDeletePhoto(id, userID); err != nil {
 		return err

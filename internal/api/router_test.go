@@ -22,6 +22,7 @@ import (
 
 type stubRegistrar struct {
 	register    func(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
+	deletePhoto func(id int64, userID int64) error
 	getPhoto    func(id int64, userID int64) (*storage.Photo, error)
 	getByUUID   func(uuid string, userID int64) (*storage.Photo, error)
 	getTimeline func(params storage.ListPhotosParams) (*storage.PhotoPage, error)
@@ -31,6 +32,10 @@ type stubRegistrar struct {
 
 func (s stubRegistrar) RegisterUploadedVideo(input service.RegisterUploadedVideoInput) (*storage.Photo, error) {
 	return s.register(input)
+}
+
+func (s stubRegistrar) DeletePhoto(id int64, userID int64) error {
+	return s.deletePhoto(id, userID)
 }
 
 func (s stubRegistrar) GetPhoto(id int64, userID int64) (*storage.Photo, error) {
@@ -75,6 +80,8 @@ func okRegistrar() stubRegistrar {
 			TakenAt:      input.TakenAt,
 			UploadedAt:   time.Now(),
 		}, nil
+	}, deletePhoto: func(id int64, userID int64) error {
+		return nil
 	}, getPhoto: func(id int64, userID int64) (*storage.Photo, error) {
 		return &storage.Photo{
 			ID:           id,
@@ -281,6 +288,86 @@ func TestGetMedia_NotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("期望 404，得到 %d", w.Code)
+	}
+}
+
+func TestDeleteMedia_RequiresAuth(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodDelete, "/api/media/1", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("期望 401，得到 %d", w.Code)
+	}
+}
+
+func TestDeleteMedia_InvalidID(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodDelete, "/api/media/abc", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("期望 400，得到 %d", w.Code)
+	}
+}
+
+func TestDeleteMedia_Success(t *testing.T) {
+	called := false
+	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+		register:    okRegistrar().register,
+		deletePhoto: func(id int64, userID int64) error { called = true; return nil },
+		getPhoto:    okRegistrar().getPhoto,
+		getByUUID:   okRegistrar().getByUUID,
+		getTimeline: okRegistrar().getTimeline,
+		mediaPath:   okRegistrar().mediaPath,
+		posterPath:  okRegistrar().posterPath,
+	})
+	req := httptest.NewRequest(http.MethodDelete, "/api/media/3", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	if !called {
+		t.Fatal("应调用删除逻辑")
+	}
+	var resp struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("解析删除响应失败: %v", err)
+	}
+	if resp.Message != "已移入回收站" {
+		t.Fatalf("删除响应不正确: %+v", resp)
+	}
+}
+
+func TestDeleteMedia_ReturnsServiceError(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+		register:    okRegistrar().register,
+		deletePhoto: func(id int64, userID int64) error { return fmt.Errorf("照片/视频不存在") },
+		getPhoto:    okRegistrar().getPhoto,
+		getByUUID:   okRegistrar().getByUUID,
+		getTimeline: okRegistrar().getTimeline,
+		mediaPath:   okRegistrar().mediaPath,
+		posterPath:  okRegistrar().posterPath,
+	})
+	req := httptest.NewRequest(http.MethodDelete, "/api/media/99", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("期望 400，得到 %d", w.Code)
 	}
 }
 

@@ -28,6 +28,7 @@ const tempMediaDirName = ".media-upload-tmp"
 
 type videoRegistrar interface {
 	RegisterUploadedVideo(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
+	DeletePhoto(id int64, userID int64) error
 	GetPhoto(id int64, userID int64) (*storage.Photo, error)
 	GetPhotoByUUIDAny(uuid string, userID int64) (*storage.Photo, error)
 	GetTimeline(params storage.ListPhotosParams) (*storage.PhotoPage, error)
@@ -60,6 +61,7 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 		media.GET("", authMiddleware(cfg), handleListMedia(cfg, registrar))
 		media.GET(":id", authMiddleware(cfg), handleGetMedia(cfg, registrar))
 		media.GET(":id/download", authMiddleware(cfg), handleDownloadMedia(cfg, registrar))
+		media.DELETE(":id", authMiddleware(cfg), handleDeleteMedia(cfg, registrar))
 		media.POST("/upload", authMiddleware(cfg), handleUploadPlaceholder(cfg, registrar))
 	}
 
@@ -131,6 +133,30 @@ func handleDownloadMedia(cfg *config.Config, registrar videoRegistrar) gin.Handl
 		c.Header("Content-Type", photo.MimeType)
 		c.Header("Content-Disposition", contentDispositionAttachment(photo.OriginalName))
 		c.File(registrar.MediaPath(photo))
+	}
+}
+
+func handleDeleteMedia(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		if err != nil || id <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "照片/视频ID 无效"})
+			return
+		}
+		if err := registrar.DeletePhoto(id, userID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "已移入回收站"})
 	}
 }
 

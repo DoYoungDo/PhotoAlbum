@@ -448,7 +448,7 @@ function showPhotoContextMenu(x, y, photo, thumbEl, listRef) {
   showContextMenu(x, y, [
     { label: isSelected ? '取消选择' : '选择（点击勾选图标可快速选择）', action: () => toggleSelect(photo.id, thumbEl) },
     { label: '查看', action: () => openLightbox(listRef, listRef.indexOf(photo)) },
-    { label: '下载', action: () => triggerDownload(`/api/photos/${photo.id}/download`) },
+    { label: '下载', action: () => triggerDownload(`/api/media/${photo.id}/download`) },
     '-',
     { label: '添加到相册…', action: () => openAlbumPickerModal([photo.id]) },
     { label: isShared ? '管理分享…' : '分享…', action: () => isShared ? openShareListModal('photo', photo.id) : openShareModal('photo', photo.id) },
@@ -982,7 +982,7 @@ function downloadCurrentPhoto() {
 	const p = state.lightboxPhotos[state.lightboxIndex];
 	if (!p) return;
 	withButtonBusy($('#lb-download'), '下载中…', async () => {
-		triggerDownload(`/api/photos/${p.id}/download`);
+		triggerDownload(`/api/media/${p.id}/download`);
 		await new Promise(resolve => setTimeout(resolve, 600));
 	});
 }

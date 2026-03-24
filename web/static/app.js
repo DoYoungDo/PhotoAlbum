@@ -642,10 +642,10 @@ async function renderAlbumDetail() {
 async function loadMoreAlbumPhotos() {
   if (state.albumLoading || !state.albumHasMore || !state.currentAlbum) return;
   state.albumLoading = true;
-  try {
-    const id = state.currentAlbum.id;
-    const url = `/api/albums/${id}/photos` + (state.albumCursor ? `?cursor=${encodeURIComponent(state.albumCursor)}` : '');
-    const page = await api.get(url);
+	try {
+		const id = state.currentAlbum.id;
+		const url = `/api/media/albums/${id}` + (state.albumCursor ? `?cursor=${encodeURIComponent(state.albumCursor)}` : '');
+		const page = await api.get(url);
     state.albumPhotos.push(...(page.photos || []));
     state.albumCursor = page.next_cursor || '';
     state.albumHasMore = page.has_more || false;

@@ -27,6 +27,7 @@ type stubRegistrar struct {
 	deletePhoto            func(id int64, userID int64) error
 	emptyTrash             func(userID int64) error
 	getDownloadEntries     func(photoIDs []int64, userID int64) ([]service.DownloadEntry, error)
+	getAlbumMedia          func(params storage.ListAlbumPhotosParams) (*storage.PhotoPage, error)
 	getPhoto               func(id int64, userID int64) (*storage.Photo, error)
 	getByUUID              func(uuid string, userID int64) (*storage.Photo, error)
 	getTrash               func(params storage.ListPhotosParams) (*storage.PhotoPage, error)
@@ -51,6 +52,10 @@ func (s stubRegistrar) EmptyTrash(userID int64) error {
 
 func (s stubRegistrar) GetDownloadEntries(photoIDs []int64, userID int64) ([]service.DownloadEntry, error) {
 	return s.getDownloadEntries(photoIDs, userID)
+}
+
+func (s stubRegistrar) GetAlbumMedia(params storage.ListAlbumPhotosParams) (*storage.PhotoPage, error) {
+	return s.getAlbumMedia(params)
 }
 
 func (s stubRegistrar) GetTrash(params storage.ListPhotosParams) (*storage.PhotoPage, error) {
@@ -121,6 +126,25 @@ func okRegistrar() stubRegistrar {
 			})
 		}
 		return entries, nil
+	}, getAlbumMedia: func(params storage.ListAlbumPhotosParams) (*storage.PhotoPage, error) {
+		return &storage.PhotoPage{Photos: []*storage.Photo{
+			{
+				ID:           11,
+				UUID:         "album-image-1",
+				OriginalName: "album.jpg",
+				MediaKind:    storage.MediaKindImage,
+				MimeType:     "image/jpeg",
+				UploadedBy:   params.UserID,
+			},
+			{
+				ID:           12,
+				UUID:         "album-video-1",
+				OriginalName: "album.mp4",
+				MediaKind:    storage.MediaKindVideo,
+				MimeType:     "video/mp4",
+				UploadedBy:   params.UserID,
+			},
+		}, NextCursor: "", HasMore: false}, nil
 	}, getPhoto: func(id int64, userID int64) (*storage.Photo, error) {
 		return &storage.Photo{
 			ID:           id,
@@ -422,6 +446,59 @@ func TestDeleteMedia_ReturnsServiceError(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("期望 400，得到 %d", w.Code)
+	}
+}
+
+func TestListAlbumMedia_RequiresAuth(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/api/media/albums/1", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("期望 401，得到 %d", w.Code)
+	}
+}
+
+func TestListAlbumMedia_InvalidAlbumID(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/api/media/albums/abc", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("期望 400，得到 %d", w.Code)
+	}
+}
+
+func TestListAlbumMedia_Success(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/api/media/albums/5", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	var page struct {
+		Photos []struct {
+			ID        int64  `json:"id"`
+			MediaKind string `json:"media_kind"`
+		} `json:"photos"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+		t.Fatalf("解析相册媒体响应失败: %v", err)
+	}
+	if len(page.Photos) != 2 {
+		t.Fatalf("期望 2 条相册媒体，得到 %d", len(page.Photos))
+	}
+	if page.Photos[1].MediaKind != storage.MediaKindVideo {
+		t.Fatalf("期望第二条为视频，得到 %s", page.Photos[1].MediaKind)
 	}
 }
 

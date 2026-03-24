@@ -33,6 +33,7 @@ type videoRegistrar interface {
 	GetPhoto(id int64, userID int64) (*storage.Photo, error)
 	GetPhotoByUUIDAny(uuid string, userID int64) (*storage.Photo, error)
 	GetDownloadEntries(photoIDs []int64, userID int64) ([]service.DownloadEntry, error)
+	GetAlbumMedia(params storage.ListAlbumPhotosParams) (*storage.PhotoPage, error)
 	GetTrash(params storage.ListPhotosParams) (*storage.PhotoPage, error)
 	PermanentlyDeletePhoto(id int64, userID int64) error
 	RestorePhoto(id int64, userID int64) error
@@ -68,6 +69,7 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 
 	media := r.Group("/api/media")
 	{
+		media.GET("/albums/:id", authMiddleware(cfg), handleListAlbumMedia(cfg, registrar))
 		media.GET("", authMiddleware(cfg), handleListMedia(cfg, registrar))
 		media.GET("/trash", authMiddleware(cfg), handleListTrashMedia(cfg, registrar))
 		media.GET(":id", authMiddleware(cfg), handleGetMedia(cfg, registrar))
@@ -217,6 +219,36 @@ func handleListTrashMedia(cfg *config.Config, registrar videoRegistrar) gin.Hand
 		})
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, page)
+	}
+}
+
+func handleListAlbumMedia(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		albumID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		if err != nil || albumID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "相册ID 无效"})
+			return
+		}
+		page, err := registrar.GetAlbumMedia(storage.ListAlbumPhotosParams{
+			AlbumID: albumID,
+			UserID:  userID,
+			Cursor:  c.Query("cursor"),
+			Limit:   30,
+		})
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusOK, page)

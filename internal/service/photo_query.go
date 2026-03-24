@@ -18,6 +18,11 @@ func (s *PhotoService) GetTrash(params storage.ListPhotosParams) (*storage.Photo
 	return s.repo.ListTrashedPhotos(params)
 }
 
+// GetAlbumMedia 获取相册内媒体（游标分页）。
+func (s *PhotoService) GetAlbumMedia(params storage.ListAlbumPhotosParams) (*storage.PhotoPage, error) {
+	return s.repo.ListAlbumPhotos(params)
+}
+
 // GetPhoto 获取单张图片
 func (s *PhotoService) GetPhoto(id int64, userID int64) (*storage.Photo, error) {
 	return s.repo.GetPhotoByID(id, userID)

@@ -29,6 +29,9 @@ var generatePosterFunc = media.GeneratePoster
 
 type videoRegistrar interface {
 	RegisterUploadedVideo(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
+	GetPhotoByUUIDAny(uuid string, userID int64) (*storage.Photo, error)
+	MediaPath(photo *storage.Photo) string
+	PosterPath(photo *storage.Photo) string
 }
 
 type contextKey string
@@ -61,11 +64,61 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 		media.POST("/upload", authMiddleware(cfg), handleUploadPlaceholder(cfg, registrar))
 	}
 
+	r.GET("/media/files/:uuid", authMiddleware(cfg), handleServeMediaFile(cfg, registrar))
+	r.GET("/media/posters/:uuid", authMiddleware(cfg), handleServePoster(cfg, registrar))
+
 	legacyHandler := gin.WrapH(legacy)
 	r.NoRoute(legacyHandler)
 	r.NoMethod(legacyHandler)
 
 	return r
+}
+
+func handleServeMediaFile(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		uuid := strings.TrimSuffix(c.Param("uuid"), filepath.Ext(c.Param("uuid")))
+		photo, err := registrar.GetPhotoByUUIDAny(uuid, userID)
+		if err != nil || photo == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "媒体不存在"})
+			return
+		}
+		c.File(registrar.MediaPath(photo))
+	}
+}
+
+func handleServePoster(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		uuid := strings.TrimSuffix(c.Param("uuid"), filepath.Ext(c.Param("uuid")))
+		photo, err := registrar.GetPhotoByUUIDAny(uuid, userID)
+		if err != nil || photo == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "媒体不存在"})
+			return
+		}
+		posterPath := registrar.PosterPath(photo)
+		if _, err := os.Stat(posterPath); err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "poster 不存在"})
+			return
+		}
+		c.File(posterPath)
+	}
 }
 
 func handleUploadPlaceholder(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {

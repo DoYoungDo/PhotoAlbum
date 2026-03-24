@@ -23,14 +23,35 @@ import (
 )
 
 type stubRegistrar struct {
-	register func(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
+	register   func(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
+	getByUUID  func(uuid string, userID int64) (*storage.Photo, error)
+	mediaPath  func(photo *storage.Photo) string
+	posterPath func(photo *storage.Photo) string
 }
 
 func (s stubRegistrar) RegisterUploadedVideo(input service.RegisterUploadedVideoInput) (*storage.Photo, error) {
 	return s.register(input)
 }
 
+func (s stubRegistrar) GetPhotoByUUIDAny(uuid string, userID int64) (*storage.Photo, error) {
+	return s.getByUUID(uuid, userID)
+}
+
+func (s stubRegistrar) MediaPath(photo *storage.Photo) string {
+	return s.mediaPath(photo)
+}
+
+func (s stubRegistrar) PosterPath(photo *storage.Photo) string {
+	return s.posterPath(photo)
+}
+
 func okRegistrar() stubRegistrar {
+	mediaFilePath := func(photo *storage.Photo) string {
+		return filepath.Join(tTempStoragePath, photo.UUID+".mp4")
+	}
+	posterFilePath := func(photo *storage.Photo) string {
+		return filepath.Join(tTempStoragePath, ".posters", photo.UUID+".jpg")
+	}
 	return stubRegistrar{register: func(input service.RegisterUploadedVideoInput) (*storage.Photo, error) {
 		return &storage.Photo{
 			ID:           99,
@@ -46,7 +67,16 @@ func okRegistrar() stubRegistrar {
 			TakenAt:      input.TakenAt,
 			UploadedAt:   time.Now(),
 		}, nil
-	}}
+	}, getByUUID: func(uuid string, userID int64) (*storage.Photo, error) {
+		return &storage.Photo{
+			ID:           99,
+			UUID:         uuid,
+			OriginalName: "demo.mp4",
+			MediaKind:    storage.MediaKindVideo,
+			MimeType:     "video/mp4",
+			UploadedBy:   userID,
+		}, nil
+	}, mediaPath: mediaFilePath, posterPath: posterFilePath}
 }
 
 func testConfig() *config.Config {
@@ -387,5 +417,103 @@ func TestUploadPlaceholder_CleansFileWhenRegisterFails(t *testing.T) {
 		if strings.HasSuffix(entry.Name(), ".mp4") {
 			t.Fatalf("注册失败后不应残留视频文件: %s", entry.Name())
 		}
+	}
+}
+
+func TestServeMediaFile_RequiresAuth(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/media/files/video-1", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("期望 401，得到 %d", w.Code)
+	}
+}
+
+func TestServeMediaFile_Success(t *testing.T) {
+	cfg := testConfig()
+	storageDir := t.TempDir()
+	cfg.StoragePath = storageDir
+	mediaFile := filepath.Join(storageDir, "video-1.mp4")
+	if err := os.WriteFile(mediaFile, []byte("video"), 0644); err != nil {
+		t.Fatalf("创建测试视频失败: %v", err)
+	}
+	router := NewRouter(cfg, http.NotFoundHandler(), stubRegistrar{
+		register: okRegistrar().register,
+		getByUUID: func(uuid string, userID int64) (*storage.Photo, error) {
+			return &storage.Photo{UUID: uuid, OriginalName: "demo.mp4", MediaKind: storage.MediaKindVideo, MimeType: "video/mp4", UploadedBy: userID}, nil
+		},
+		mediaPath:  func(photo *storage.Photo) string { return mediaFile },
+		posterPath: func(photo *storage.Photo) string { return filepath.Join(storageDir, ".posters", photo.UUID+".jpg") },
+	})
+	req := httptest.NewRequest(http.MethodGet, "/media/files/video-1", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, cfg.JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	if body := w.Body.String(); body != "video" {
+		t.Fatalf("返回内容不正确: %s", body)
+	}
+}
+
+func TestServePoster_Success(t *testing.T) {
+	cfg := testConfig()
+	storageDir := t.TempDir()
+	cfg.StoragePath = storageDir
+	posterFile := filepath.Join(storageDir, ".posters", "video-1.jpg")
+	if err := os.MkdirAll(filepath.Dir(posterFile), 0755); err != nil {
+		t.Fatalf("创建 poster 目录失败: %v", err)
+	}
+	if err := os.WriteFile(posterFile, []byte("jpg"), 0644); err != nil {
+		t.Fatalf("创建测试 poster 失败: %v", err)
+	}
+	router := NewRouter(cfg, http.NotFoundHandler(), stubRegistrar{
+		register: okRegistrar().register,
+		getByUUID: func(uuid string, userID int64) (*storage.Photo, error) {
+			return &storage.Photo{UUID: uuid, OriginalName: "demo.mp4", MediaKind: storage.MediaKindVideo, MimeType: "video/mp4", UploadedBy: userID}, nil
+		},
+		mediaPath:  func(photo *storage.Photo) string { return filepath.Join(storageDir, photo.UUID+".mp4") },
+		posterPath: func(photo *storage.Photo) string { return posterFile },
+	})
+	req := httptest.NewRequest(http.MethodGet, "/media/posters/video-1", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, cfg.JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	if body := w.Body.String(); body != "jpg" {
+		t.Fatalf("返回内容不正确: %s", body)
+	}
+}
+
+func TestServePoster_Returns404WhenMissing(t *testing.T) {
+	cfg := testConfig()
+	storageDir := t.TempDir()
+	cfg.StoragePath = storageDir
+	router := NewRouter(cfg, http.NotFoundHandler(), stubRegistrar{
+		register: okRegistrar().register,
+		getByUUID: func(uuid string, userID int64) (*storage.Photo, error) {
+			return &storage.Photo{UUID: uuid, OriginalName: "demo.mp4", MediaKind: storage.MediaKindVideo, MimeType: "video/mp4", UploadedBy: userID}, nil
+		},
+		mediaPath:  func(photo *storage.Photo) string { return filepath.Join(storageDir, photo.UUID+".mp4") },
+		posterPath: func(photo *storage.Photo) string { return filepath.Join(storageDir, ".posters", photo.UUID+".jpg") },
+	})
+	req := httptest.NewRequest(http.MethodGet, "/media/posters/video-1", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, cfg.JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("期望 404，得到 %d", w.Code)
 	}
 }

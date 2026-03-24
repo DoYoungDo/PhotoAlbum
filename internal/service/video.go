@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"photoalbum/internal/media"
@@ -50,4 +51,13 @@ func (s *PhotoService) RegisterUploadedVideo(input RegisterUploadedVideoInput) (
 		return nil, fmt.Errorf("保存视频记录失败: %w", err)
 	}
 	return photo, nil
+}
+
+func (s *PhotoService) MediaPath(photo *storage.Photo) string {
+	ext := filepath.Ext(photo.OriginalName)
+	return filepath.Join(s.storagePath, photo.UUID+ext)
+}
+
+func (s *PhotoService) PosterPath(photo *storage.Photo) string {
+	return media.PosterPath(s.storagePath, photo.UUID)
 }

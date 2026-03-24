@@ -471,7 +471,7 @@ async function addSinglePhotoToAlbum(photoId) {
 
 async function deleteSinglePhoto(photoId) {
   if (!confirm('确定要将这条照片/视频移入回收站吗？')) return;
-  try { await api.del(`/api/photos/${photoId}`); switchView('timeline'); }
+  try { await api.del(`/api/media/${photoId}`); switchView('timeline'); }
   catch(e) { alert('删除失败: ' + (e.error || e)); }
 }
 
@@ -522,7 +522,7 @@ async function deleteSelected() {
   if (!state.selected.size) return;
   if (!confirm(`确定要删除选中的 ${state.selected.size} 条照片/视频吗？`)) return;
   for (const id of state.selected) {
-    try { await api.del(`/api/photos/${id}`); } catch (e) { console.error(e); }
+    try { await api.del(`/api/media/${id}`); } catch (e) { console.error(e); }
   }
   clearSelection();
   switchView('timeline');

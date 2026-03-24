@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ const tempMediaDirName = ".media-upload-tmp"
 
 type videoRegistrar interface {
 	RegisterUploadedVideo(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
+	GetPhoto(id int64, userID int64) (*storage.Photo, error)
 	GetPhotoByUUIDAny(uuid string, userID int64) (*storage.Photo, error)
 	GetTimeline(params storage.ListPhotosParams) (*storage.PhotoPage, error)
 	MediaPath(photo *storage.Photo) string
@@ -55,6 +57,7 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 	media := r.Group("/api/media")
 	{
 		media.GET("", authMiddleware(cfg), handleListMedia(cfg, registrar))
+		media.GET(":id", authMiddleware(cfg), handleGetMedia(cfg, registrar))
 		media.POST("/upload", authMiddleware(cfg), handleUploadPlaceholder(cfg, registrar))
 	}
 
@@ -66,6 +69,35 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 	r.NoMethod(legacyHandler)
 
 	return r
+}
+
+func handleGetMedia(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		if err != nil || id <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "照片/视频ID 无效"})
+			return
+		}
+		photo, err := registrar.GetPhoto(id, userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if photo == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "照片/视频不存在"})
+			return
+		}
+		c.JSON(http.StatusOK, photo)
+	}
 }
 
 func handleListMedia(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {

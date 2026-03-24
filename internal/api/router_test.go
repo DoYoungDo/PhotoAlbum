@@ -22,6 +22,7 @@ import (
 
 type stubRegistrar struct {
 	register    func(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
+	getPhoto    func(id int64, userID int64) (*storage.Photo, error)
 	getByUUID   func(uuid string, userID int64) (*storage.Photo, error)
 	getTimeline func(params storage.ListPhotosParams) (*storage.PhotoPage, error)
 	mediaPath   func(photo *storage.Photo) string
@@ -30,6 +31,10 @@ type stubRegistrar struct {
 
 func (s stubRegistrar) RegisterUploadedVideo(input service.RegisterUploadedVideoInput) (*storage.Photo, error) {
 	return s.register(input)
+}
+
+func (s stubRegistrar) GetPhoto(id int64, userID int64) (*storage.Photo, error) {
+	return s.getPhoto(id, userID)
 }
 
 func (s stubRegistrar) GetPhotoByUUIDAny(uuid string, userID int64) (*storage.Photo, error) {
@@ -69,6 +74,16 @@ func okRegistrar() stubRegistrar {
 			UploadedBy:   input.UploadedBy,
 			TakenAt:      input.TakenAt,
 			UploadedAt:   time.Now(),
+		}, nil
+	}, getPhoto: func(id int64, userID int64) (*storage.Photo, error) {
+		return &storage.Photo{
+			ID:           id,
+			UUID:         fmt.Sprintf("media-%d", id),
+			OriginalName: "demo.mp4",
+			MediaKind:    storage.MediaKindVideo,
+			MimeType:     "video/mp4",
+			DurationMS:   12000,
+			UploadedBy:   userID,
 		}, nil
 	}, getByUUID: func(uuid string, userID int64) (*storage.Photo, error) {
 		return &storage.Photo{
@@ -201,6 +216,71 @@ func TestMediaList_RequiresAuth(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("期望 401，得到 %d", w.Code)
+	}
+}
+
+func TestGetMedia_RequiresAuth(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/api/media/1", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("期望 401，得到 %d", w.Code)
+	}
+}
+
+func TestGetMedia_InvalidID(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/api/media/abc", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("期望 400，得到 %d", w.Code)
+	}
+}
+
+func TestGetMedia_Success(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/api/media/2", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	var photo struct {
+		ID        int64  `json:"id"`
+		MediaKind string `json:"media_kind"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &photo); err != nil {
+		t.Fatalf("解析媒体详情响应失败: %v", err)
+	}
+	if photo.ID != 2 || photo.MediaKind != storage.MediaKindVideo {
+		t.Fatalf("返回媒体详情不正确: %+v", photo)
+	}
+}
+
+func TestGetMedia_NotFound(t *testing.T) {
+	registrar := okRegistrar()
+	registrar.getPhoto = func(id int64, userID int64) (*storage.Photo, error) {
+		return nil, nil
+	}
+	router := NewRouter(testConfig(), http.NotFoundHandler(), registrar)
+	req := httptest.NewRequest(http.MethodGet, "/api/media/99", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("期望 404，得到 %d", w.Code)
 	}
 }
 

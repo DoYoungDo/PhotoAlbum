@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -52,9 +53,48 @@ func main() {
 	app := server.New(cfg, photoService, albumService, shareService, webFS)
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
-	fmt.Printf("HTTP 服务已启动: http://127.0.0.1%s\n", addr)
+	if host := preferredLANIP(); host != "" {
+		fmt.Printf("HTTP 服务已启动: http://%s%s\n", host, addr)
+	} else {
+		fmt.Printf("HTTP 服务已启动: http://127.0.0.1%s\n", addr)
+	}
 	if err := http.ListenAndServe(addr, app); err != nil {
 		fmt.Fprintf(os.Stderr, "错误: HTTP 服务启动失败: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func preferredLANIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+
+	var fallback string
+	for _, addr := range addrs {
+		ipNet, ok := addr.(*net.IPNet)
+		if !ok || ipNet.IP == nil || ipNet.IP.IsLoopback() {
+			continue
+		}
+
+		ip := ipNet.IP.To4()
+		if ip == nil || !isPrivateIPv4(ip) {
+			continue
+		}
+
+		if ip[0] == 192 && ip[1] == 168 {
+			return ip.String()
+		}
+		if fallback == "" {
+			fallback = ip.String()
+		}
+	}
+
+	return fallback
+}
+
+func isPrivateIPv4(ip net.IP) bool {
+	return ip[0] == 10 ||
+		(ip[0] == 172 && ip[1] >= 16 && ip[1] <= 31) ||
+		(ip[0] == 192 && ip[1] == 168)
 }

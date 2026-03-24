@@ -558,13 +558,13 @@ function makeAlbumCard(album) {
   const card = el('div', 'album-card');
   // c-1: 用 cover_uuid 显示封面缩略图
   const coverHtml = album.cover_uuid
-    ? `<img loading="lazy" src="/media/thumbnails/${album.cover_uuid}" alt="${album.name}">`
+    ? `<img loading="lazy" src="/media/thumbnails/${album.cover_uuid}" alt="${album.name}" onerror="this.onerror=null;this.src='${videoPosterPlaceholder}'">`
     : `<div class="album-cover-empty">${icons.photo}</div>`;
   card.innerHTML = `
 <div class="album-cover">${coverHtml}</div>
 <div class="album-info">
   <div class="album-name">${album.name}</div>
-  <div class="album-count">${album.photo_count || 0} 张</div>
+  <div class="album-count">${album.photo_count || 0} 条照片/视频</div>
 </div>`;
   card.addEventListener('click', () => openAlbumDetail(album));
   return card;
@@ -609,7 +609,7 @@ async function renderAlbumDetail() {
     });
   });
   $('#delete-album-btn').addEventListener('click', async () => {
-    if (!confirm(`确定要删除相册「${album.name}」吗？图片本身不会被删除。`)) return;
+    if (!confirm(`确定要删除相册「${album.name}」吗？照片/视频本身不会被删除。`)) return;
     try {
       await api.del(`/api/albums/${album.id}`);
       state.currentAlbum = null;
@@ -623,7 +623,7 @@ async function renderAlbumDetail() {
   $('#content').innerHTML = `
 <div class="toolbar">
   <span id="sel-bar" class="selected-bar">
-    <span class="selected-count" id="sel-count">0</span> 张已选
+    <span class="selected-count" id="sel-count">0</span> 条已选
     <button class="btn btn-sm" style="background:rgba(255,255,255,.2);border-color:transparent;color:#fff" id="download-sel-btn">下载选中</button>
     <button class="btn btn-sm" style="background:rgba(255,255,255,.2);border-color:transparent;color:#fff" id="add-to-album-btn">${icons.album} 添加到相册</button>
     <button class="btn btn-sm" style="background:rgba(255,255,255,.2);border-color:transparent;color:#fff" id="delete-sel-btn">${icons.trash} 删除</button>
@@ -689,7 +689,7 @@ async function renderTrash() {
   $('#content').innerHTML = `
 <div class="toolbar">
   <span id="trash-sel-bar" class="selected-bar">
-    <span class="selected-count" id="trash-sel-count">0</span> 张已选
+    <span class="selected-count" id="trash-sel-count">0</span> 条已选
     <button class="btn btn-sm" style="background:rgba(255,255,255,.2);border-color:transparent;color:#fff" id="restore-sel-btn">${icons.prev} 批量恢复</button>
     <button class="btn btn-sm" style="background:rgba(255,255,255,.2);border-color:transparent;color:#fff" id="hard-delete-sel-btn">${icons.trash} 批量删除</button>
     <button class="btn-icon" style="color:#fff" id="trash-clear-sel-btn">${icons.close}</button>
@@ -1273,7 +1273,7 @@ async function confirmAlbumPicker() {
   }
   $('#album-picker-confirm').disabled = false;
   $('#album-picker-modal').classList.remove('open');
-  showToast(`已添加 ${ok} 张到「${album.name}」${fail ? `，${fail} 张失败` : ''}`);
+  showToast(`已添加 ${ok} 条到「${album.name}」${fail ? `，${fail} 条失败` : ''}`);
   if (_pickerPhotoIds === null) clearSelection();
 }
 

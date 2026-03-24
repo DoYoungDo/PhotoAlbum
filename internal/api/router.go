@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -58,6 +59,7 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 	{
 		media.GET("", authMiddleware(cfg), handleListMedia(cfg, registrar))
 		media.GET(":id", authMiddleware(cfg), handleGetMedia(cfg, registrar))
+		media.GET(":id/download", authMiddleware(cfg), handleDownloadMedia(cfg, registrar))
 		media.POST("/upload", authMiddleware(cfg), handleUploadPlaceholder(cfg, registrar))
 	}
 
@@ -98,6 +100,48 @@ func handleGetMedia(cfg *config.Config, registrar videoRegistrar) gin.HandlerFun
 		}
 		c.JSON(http.StatusOK, photo)
 	}
+}
+
+func handleDownloadMedia(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		if err != nil || id <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "照片/视频ID 无效"})
+			return
+		}
+		photo, err := registrar.GetPhoto(id, userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if photo == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "照片/视频不存在"})
+			return
+		}
+
+		c.Header("Content-Type", photo.MimeType)
+		c.Header("Content-Disposition", contentDispositionAttachment(photo.OriginalName))
+		c.File(registrar.MediaPath(photo))
+	}
+}
+
+func contentDispositionAttachment(filename string) string {
+	trimmed := strings.ReplaceAll(filename, "\"", "")
+	trimmed = strings.ReplaceAll(trimmed, "\n", "")
+	trimmed = strings.ReplaceAll(trimmed, "\r", "")
+	if trimmed == "" {
+		trimmed = "download"
+	}
+	return fmt.Sprintf("attachment; filename=%q; filename*=UTF-8''%s", trimmed, url.PathEscape(trimmed))
 }
 
 func handleListMedia(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {

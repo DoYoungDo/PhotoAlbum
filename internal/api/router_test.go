@@ -284,6 +284,87 @@ func TestGetMedia_NotFound(t *testing.T) {
 	}
 }
 
+func TestDownloadMedia_RequiresAuth(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/api/media/1/download", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("期望 401，得到 %d", w.Code)
+	}
+}
+
+func TestDownloadMedia_InvalidID(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/api/media/abc/download", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("期望 400，得到 %d", w.Code)
+	}
+}
+
+func TestDownloadMedia_Success(t *testing.T) {
+	cfg := testConfig()
+	storageDir := t.TempDir()
+	cfg.StoragePath = storageDir
+	mediaFile := filepath.Join(storageDir, "media-2.mp4")
+	if err := os.WriteFile(mediaFile, []byte("video-download"), 0644); err != nil {
+		t.Fatalf("创建测试媒体文件失败: %v", err)
+	}
+	router := NewRouter(cfg, http.NotFoundHandler(), stubRegistrar{
+		register: okRegistrar().register,
+		getPhoto: func(id int64, userID int64) (*storage.Photo, error) {
+			return &storage.Photo{ID: id, UUID: "media-2", OriginalName: "demo video.mp4", MediaKind: storage.MediaKindVideo, MimeType: "video/mp4", UploadedBy: userID}, nil
+		},
+		getByUUID:   okRegistrar().getByUUID,
+		getTimeline: okRegistrar().getTimeline,
+		mediaPath:   func(photo *storage.Photo) string { return mediaFile },
+		posterPath:  okRegistrar().posterPath,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/media/2/download", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, cfg.JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	if body := w.Body.String(); body != "video-download" {
+		t.Fatalf("下载内容不正确: %s", body)
+	}
+	disposition := w.Header().Get("Content-Disposition")
+	if !strings.Contains(disposition, "attachment;") || !strings.Contains(disposition, "demo video.mp4") {
+		t.Fatalf("下载头不正确: %s", disposition)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "video/mp4" {
+		t.Fatalf("Content-Type 不正确: %s", ct)
+	}
+}
+
+func TestDownloadMedia_NotFound(t *testing.T) {
+	registrar := okRegistrar()
+	registrar.getPhoto = func(id int64, userID int64) (*storage.Photo, error) {
+		return nil, nil
+	}
+	router := NewRouter(testConfig(), http.NotFoundHandler(), registrar)
+	req := httptest.NewRequest(http.MethodGet, "/api/media/99/download", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("期望 404，得到 %d", w.Code)
+	}
+}
+
 func TestNewRouter_FallsBackToLegacyHandler(t *testing.T) {
 	legacy := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/login" {

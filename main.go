@@ -52,7 +52,7 @@ func main() {
 	albumService := service.NewAlbumService(repo)
 	shareService := service.NewShareService(repo)
 	legacyApp := server.New(cfg, photoService, albumService, shareService, webFS)
-	app := api.NewRouter(legacyApp)
+	app := api.NewRouter(cfg, legacyApp)
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	if host := preferredLANIP(); host != "" {

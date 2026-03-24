@@ -341,7 +341,7 @@ function renderTimelineGroups(newPhotos, offset) {
   const container = $('#timeline-groups');
   if (!container) return;
   if (offset === 0 && newPhotos.length === 0) {
-    container.innerHTML = `<div class="empty">${icons.photo}<p>还没有照片，点击右上角上传吧</p></div>`;
+    container.innerHTML = `<div class="empty">${icons.photo}<p>还没有媒体，点击右上角上传吧</p></div>`;
     return;
   }
   const groups = groupByDate(newPhotos);
@@ -359,16 +359,41 @@ function renderTimelineGroups(newPhotos, offset) {
   }
 }
 
+function isVideoMedia(photo) {
+  return photo && photo.media_kind === 'video';
+}
+
+function mediaThumbURL(photo) {
+  return isVideoMedia(photo) ? `/media/posters/${photo.uuid}` : `/media/thumbnails/${photo.uuid}`;
+}
+
+function mediaFileURL(photo) {
+  return isVideoMedia(photo) ? `/media/files/${photo.uuid}` : `/media/photos/${photo.uuid}`;
+}
+
+function formatDuration(durationMS) {
+  const totalSeconds = Math.max(0, Math.floor((durationMS || 0) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
 // ── 缩略图 ────────────────────────────────────────────
 function makePhotoThumb(photo, listRef, opts = {}) {
   const div = el('div', 'photo-thumb');
   div.dataset.id = photo.id;
+  div.dataset.kind = photo.media_kind || 'image';
 
   const isShared = !!state.shareMap[`photo:${photo.id}`];
   const shareBadge = isShared
     ? `<span class="share-badge">${icons.shareSmall}</span>` : '';
+  const mediaBadge = isVideoMedia(photo)
+    ? `<span class="media-badge">视频${photo.duration_ms ? ` · ${formatDuration(photo.duration_ms)}` : ''}</span>`
+    : '';
 
-  div.innerHTML = `<span class="check">${icons.check}</span><img loading="lazy" src="/media/thumbnails/${photo.uuid}" alt="${photo.original_name}">${shareBadge}`;
+  div.innerHTML = `<span class="check">${icons.check}</span><img loading="lazy" src="${mediaThumbURL(photo)}" alt="${photo.original_name}">${shareBadge}${mediaBadge}`;
 
   // b-1: 点击 .check 区域直接进入/切换选择模式
   const checkEl = div.querySelector('.check');
@@ -807,6 +832,7 @@ function renderLightbox() {
   </div>
   <div class="lightbox-body">
     <img class="lightbox-img" id="lb-img" src="" alt="">
+    <video class="lightbox-video hidden" id="lb-video" controls playsinline preload="metadata"></video>
     <button class="lb-nav lb-prev" id="lb-prev">${icons.prev}</button>
     <button class="lb-nav lb-next" id="lb-next">${icons.next}</button>
   </div>
@@ -836,23 +862,54 @@ function openLightbox(photos, index) {
   $('#lightbox').classList.add('open');
   lbRender();
 }
-function closeLightbox() { $('#lightbox').classList.remove('open'); }
+function closeLightbox() {
+  const video = $('#lb-video');
+  if (video) {
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+  }
+  $('#lightbox').classList.remove('open');
+}
 function lbNav(dir) {
   const n = state.lightboxIndex + dir;
   if (n < 0 || n >= state.lightboxPhotos.length) return;
+  const video = $('#lb-video');
+  if (video) {
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+  }
   state.lightboxIndex = n;
   lbRender();
 }
 function lbRender() {
   const p = state.lightboxPhotos[state.lightboxIndex];
   if (!p) return;
-  $('#lb-img').src = `/media/photos/${p.uuid}`;
+  const img = $('#lb-img');
+  const video = $('#lb-video');
+  if (isVideoMedia(p)) {
+    img.classList.add('hidden');
+    img.removeAttribute('src');
+    video.classList.remove('hidden');
+    video.src = mediaFileURL(p);
+    video.poster = mediaThumbURL(p);
+  } else {
+    video.pause();
+    video.classList.add('hidden');
+    video.removeAttribute('src');
+    video.load();
+    img.classList.remove('hidden');
+    img.src = mediaFileURL(p);
+  }
   $('#lb-title').textContent = p.original_name;
   $('#lb-prev').classList.toggle('hidden', state.lightboxIndex === 0);
   $('#lb-next').classList.toggle('hidden', state.lightboxIndex === state.lightboxPhotos.length - 1);
   const items = [
+    ['类型', isVideoMedia(p) ? '视频' : '图片'],
     ['拍摄时间', formatDate(p.taken_at)],
     ['尺寸', p.width && p.height ? `${p.width} × ${p.height}` : '—'],
+    ['时长', isVideoMedia(p) && p.duration_ms ? formatDuration(p.duration_ms) : '—'],
     ['大小', formatSize(p.size)],
     ['文件名', p.original_name],
   ];
@@ -940,12 +997,12 @@ async function downloadSelected() {
 function renderUploadModal() {
   return `<div class="modal-overlay" id="upload-modal">
   <div class="modal" style="width:520px">
-    <div class="modal-title">${icons.upload} 上传照片</div>
+    <div class="modal-title">${icons.upload} 上传媒体</div>
     <div class="upload-zone" id="drop-zone">
       ${icons.upload}
-      <div style="margin-top:8px">拖拽照片到这里，或点击选择文件</div>
-      <div style="font-size:.8rem;margin-top:4px">支持 JPG、PNG、GIF、WebP</div>
-      <input type="file" id="file-input" accept="image/*" multiple aria-hidden="true">
+      <div style="margin-top:8px">拖拽图片或视频到这里，或点击选择文件</div>
+      <div style="font-size:.8rem;margin-top:4px">支持 JPG、PNG、GIF、WebP、MP4</div>
+      <input type="file" id="file-input" accept="image/*,video/mp4" multiple aria-hidden="true">
     </div>
     <div class="upload-queue" id="upload-queue"></div>
     <div class="modal-footer">
@@ -992,7 +1049,7 @@ function bindUploadZone() {
   input.addEventListener('change', () => { if (input.files.length) handleFiles(input.files); });
 }
 async function handleFiles(fileList) {
-  const files = [...fileList].filter(f => f.type.startsWith('image/'));
+  const files = [...fileList].filter(f => f.type.startsWith('image/') || f.type === 'video/mp4');
   if (!files.length) return;
   const queue = $('#upload-queue');
   for (const file of files) {
@@ -1033,7 +1090,8 @@ async function uploadFile(file, id, job) {
   if (retryBtn) retryBtn.style.display = 'none';
   if (stat) { stat.textContent = '上传中'; stat.className = 'up-status'; }
   const fd = new FormData();
-  fd.append('photo', file);
+  const isVideo = file.type === 'video/mp4';
+  fd.append(isVideo ? 'media' : 'photo', file);
   // 传递浏览器 File 对象的本地最后修改时间，供后端在无 EXIF 时作为回退时间。
   if (file.lastModified) {
     fd.append('client_last_modified_ms', String(file.lastModified));
@@ -1041,7 +1099,7 @@ async function uploadFile(file, id, job) {
   try {
     await new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', '/api/photos/upload');
+      xhr.open('POST', isVideo ? '/api/media/upload' : '/api/photos/upload');
       xhr.upload.onprogress = e => { if (prog && e.lengthComputable) prog.style.width = (e.loaded / e.total * 100) + '%'; };
       xhr.onload = () => { if (xhr.status === 201) resolve(); else { try { reject(JSON.parse(xhr.responseText)); } catch { reject({ error: xhr.statusText }); } } };
       xhr.onerror = () => reject({ error: '网络错误' });

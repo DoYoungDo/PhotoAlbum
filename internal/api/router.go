@@ -17,12 +17,18 @@ import (
 
 	"photoalbum/internal/config"
 	"photoalbum/internal/media"
+	"photoalbum/internal/service"
+	"photoalbum/internal/storage"
 )
 
 const authCookieName = "photoalbum_token"
 const tempMediaDirName = ".media-upload-tmp"
 
 var probeVideoFunc = media.ProbeVideo
+
+type videoRegistrar interface {
+	RegisterUploadedVideo(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
+}
 
 type contextKey string
 
@@ -38,7 +44,7 @@ type Claims struct {
 //
 // 当前阶段仅为后续媒体能力预留 Gin 路由组，
 // 其余现有功能继续回退到 legacy handler。
-func NewRouter(cfg *config.Config, legacy http.Handler) http.Handler {
+func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar) http.Handler {
 	gin.SetMode(gin.ReleaseMode)
 
 	r := gin.New()
@@ -51,7 +57,7 @@ func NewRouter(cfg *config.Config, legacy http.Handler) http.Handler {
 				"error": "媒体接口尚未实现",
 			})
 		})
-		media.POST("/upload", authMiddleware(cfg), handleUploadPlaceholder(cfg))
+		media.POST("/upload", authMiddleware(cfg), handleUploadPlaceholder(cfg, registrar))
 	}
 
 	legacyHandler := gin.WrapH(legacy)
@@ -61,8 +67,12 @@ func NewRouter(cfg *config.Config, legacy http.Handler) http.Handler {
 	return r
 }
 
-func handleUploadPlaceholder(cfg *config.Config) gin.HandlerFunc {
+func handleUploadPlaceholder(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体上传服务未配置"})
+			return
+		}
 		file, err := c.FormFile("media")
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 media 文件字段"})
@@ -108,11 +118,42 @@ func handleUploadPlaceholder(cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
+		uuid := strings.TrimSuffix(filepath.Base(tempPath), filepath.Ext(tempPath))
+		finalPath := filepath.Join(cfg.StoragePath, uuid+filepath.Ext(file.Filename))
+		if err := os.Rename(tempPath, finalPath); err != nil {
+			_ = os.Remove(tempPath)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "移动媒体文件失败"})
+			return
+		}
+
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			_ = os.Remove(finalPath)
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+
+		photo, err := registrar.RegisterUploadedVideo(service.RegisterUploadedVideoInput{
+			UUID:         uuid,
+			OriginalName: file.Filename,
+			MimeType:     "video/mp4",
+			Size:         file.Size,
+			UploadedBy:   userID,
+			TakenAt:      time.Now(),
+			Meta:         meta,
+		})
+		if err != nil {
+			_ = os.Remove(finalPath)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
 		c.JSON(http.StatusCreated, gin.H{
-			"message":  "媒体文件已临时保存并完成基础探测",
+			"message":  "视频上传成功",
 			"filename": file.Filename,
-			"path":     tempPath,
+			"path":     finalPath,
 			"meta":     meta,
+			"photo":    photo,
 		})
 	}
 }
@@ -163,6 +204,21 @@ func authMiddleware(cfg *config.Config) gin.HandlerFunc {
 		c.Set(string(userContextKey), username)
 		c.Next()
 	}
+}
+
+func currentUsername(c *gin.Context) string {
+	username, _ := c.Get(string(userContextKey))
+	v, _ := username.(string)
+	return v
+}
+
+func currentUserID(cfg *config.Config, username string) (int64, error) {
+	for i, u := range cfg.Users {
+		if u.Username == username {
+			return int64(i + 1), nil
+		}
+	}
+	return 0, errors.New("用户不存在")
 }
 
 func parseToken(secret, tokenString string) (string, error) {

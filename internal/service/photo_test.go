@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"photoalbum/internal/media"
 	"photoalbum/internal/storage"
 )
 
@@ -107,6 +108,37 @@ func TestUpload_FallbackTime(t *testing.T) {
 	}
 	if !result.Photo.TakenAt.Equal(fallback) {
 		t.Errorf("期望使用 fallback 时间 %v，得到 %v", fallback, result.Photo.TakenAt)
+	}
+}
+
+func TestRegisterUploadedVideo_Success(t *testing.T) {
+	svc, _ := newTestPhotoService(t)
+	result, err := svc.RegisterUploadedVideo(RegisterUploadedVideoInput{
+		UUID:         "video-uuid",
+		OriginalName: "demo.mp4",
+		MimeType:     "video/mp4",
+		Size:         4096,
+		UploadedBy:   1,
+		TakenAt:      time.Now(),
+		Meta: &media.VideoMeta{
+			Width:      1920,
+			Height:     1080,
+			DurationMS: 54321,
+			FormatName: "mp4",
+			CodecName:  "h264",
+		},
+	})
+	if err != nil {
+		t.Fatalf("注册视频失败: %v", err)
+	}
+	if result.ID == 0 {
+		t.Fatal("注册后应生成 ID")
+	}
+	if result.MediaKind != storage.MediaKindVideo {
+		t.Fatalf("期望视频类型，得到 %s", result.MediaKind)
+	}
+	if result.DurationMS != 54321 {
+		t.Fatalf("期望时长 54321，得到 %d", result.DurationMS)
 	}
 }
 

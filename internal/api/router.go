@@ -25,6 +25,7 @@ const authCookieName = "photoalbum_token"
 const tempMediaDirName = ".media-upload-tmp"
 
 var probeVideoFunc = media.ProbeVideo
+var generatePosterFunc = media.GeneratePoster
 
 type videoRegistrar interface {
 	RegisterUploadedVideo(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
@@ -148,12 +149,21 @@ func handleUploadPlaceholder(cfg *config.Config, registrar videoRegistrar) gin.H
 			return
 		}
 
+		posterPath := media.PosterPath(cfg.StoragePath, photo.UUID)
+		posterError := ""
+		if err := generatePosterFunc(finalPath, posterPath); err != nil {
+			posterError = err.Error()
+			posterPath = ""
+		}
+
 		c.JSON(http.StatusCreated, gin.H{
-			"message":  "视频上传成功",
-			"filename": file.Filename,
-			"path":     finalPath,
-			"meta":     meta,
-			"photo":    photo,
+			"message":      "视频上传成功",
+			"filename":     file.Filename,
+			"path":         finalPath,
+			"poster_path":  posterPath,
+			"poster_error": posterError,
+			"meta":         meta,
+			"photo":        photo,
 		})
 	}
 }

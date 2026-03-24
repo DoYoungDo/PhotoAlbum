@@ -16,7 +16,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 
 	"photoalbum/internal/config"
-	"photoalbum/internal/media"
 	"photoalbum/internal/service"
 	"photoalbum/internal/storage"
 )
@@ -155,24 +154,6 @@ func TestNewRouter_MediaPlaceholder(t *testing.T) {
 	}
 }
 
-func withProbeStub(t *testing.T, stub func(string) (*media.VideoMeta, error)) {
-	t.Helper()
-	old := probeVideoFunc
-	probeVideoFunc = stub
-	t.Cleanup(func() {
-		probeVideoFunc = old
-	})
-}
-
-func withPosterStub(t *testing.T, stub func(string, string) error) {
-	t.Helper()
-	old := generatePosterFunc
-	generatePosterFunc = stub
-	t.Cleanup(func() {
-		generatePosterFunc = old
-	})
-}
-
 func TestNewRouter_FallsBackToLegacyHandler(t *testing.T) {
 	legacy := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/login" {
@@ -236,15 +217,6 @@ func TestUploadPlaceholder_RejectsNonMP4Extension(t *testing.T) {
 func TestUploadPlaceholder_SavesFinalFileAndRecordAfterValidation(t *testing.T) {
 	cfg := testConfig()
 	cfg.StoragePath = t.TempDir()
-	withProbeStub(t, func(path string) (*media.VideoMeta, error) {
-		return &media.VideoMeta{Width: 1920, Height: 1080, DurationMS: 12345, FormatName: "mp4", CodecName: "h264"}, nil
-	})
-	withPosterStub(t, func(videoPath, posterPath string) error {
-		if err := os.MkdirAll(filepath.Dir(posterPath), 0755); err != nil {
-			return err
-		}
-		return os.WriteFile(posterPath, []byte("jpg"), 0644)
-	})
 	router := NewRouter(cfg, http.NotFoundHandler(), okRegistrar())
 	req := uploadRequest(t, "/api/media/upload", "demo.mp4", mp4Sample(), true)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, cfg.JWTSecret, "alice")})
@@ -286,20 +258,17 @@ func TestUploadPlaceholder_SavesFinalFileAndRecordAfterValidation(t *testing.T) 
 	if resp.Path == "" {
 		t.Fatal("响应中应返回最终文件路径")
 	}
-	if resp.Meta.DurationMS != 12345 || resp.Meta.Width != 1920 || resp.Meta.Height != 1080 {
+	if resp.Meta.DurationMS != 0 || resp.Meta.Width != 0 || resp.Meta.Height != 0 || resp.Meta.FormatName != "mp4" {
 		t.Fatalf("返回的元数据不正确: %+v", resp.Meta)
 	}
-	if resp.Photo.ID != 99 || resp.Photo.MediaKind != storage.MediaKindVideo || resp.Photo.DurationMS != 12345 {
+	if resp.Photo.ID != 99 || resp.Photo.MediaKind != storage.MediaKindVideo || resp.Photo.DurationMS != 0 {
 		t.Fatalf("返回的媒体记录不正确: %+v", resp.Photo)
 	}
-	if resp.PosterPath == "" || resp.PosterError != "" {
+	if resp.PosterPath != "" || resp.PosterError != "" {
 		t.Fatalf("poster 返回不正确: path=%s err=%s", resp.PosterPath, resp.PosterError)
 	}
 	if resp.ProbeError != "" {
 		t.Fatalf("正常探测时不应返回 probe 错误: %s", resp.ProbeError)
-	}
-	if _, err := os.Stat(resp.PosterPath); err != nil {
-		t.Fatalf("poster 文件应存在: %v", err)
 	}
 	if filepath.Dir(resp.Path) != cfg.StoragePath {
 		t.Fatalf("最终文件目录不正确: %s", resp.Path)
@@ -316,110 +285,9 @@ func TestUploadPlaceholder_SavesFinalFileAndRecordAfterValidation(t *testing.T) 
 	}
 }
 
-func TestUploadPlaceholder_ReturnsPosterErrorButKeepsSuccess(t *testing.T) {
-	cfg := testConfig()
-	cfg.StoragePath = t.TempDir()
-	withProbeStub(t, func(path string) (*media.VideoMeta, error) {
-		return &media.VideoMeta{Width: 1920, Height: 1080, DurationMS: 12345, FormatName: "mp4", CodecName: "h264"}, nil
-	})
-	withPosterStub(t, func(videoPath, posterPath string) error {
-		return fmt.Errorf("ffmpeg 执行失败")
-	})
-	router := NewRouter(cfg, http.NotFoundHandler(), okRegistrar())
-	req := uploadRequest(t, "/api/media/upload", "demo.mp4", mp4Sample(), true)
-	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, cfg.JWTSecret, "alice")})
-	w := httptest.NewRecorder()
-
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusCreated {
-		t.Fatalf("期望 201，得到 %d", w.Code)
-	}
-	var resp struct {
-		Path        string `json:"path"`
-		PosterPath  string `json:"poster_path"`
-		PosterError string `json:"poster_error"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("解析响应失败: %v", err)
-	}
-	if resp.Path == "" {
-		t.Fatal("视频文件路径不能为空")
-	}
-	if resp.PosterPath != "" || resp.PosterError == "" {
-		t.Fatalf("poster 失败时返回不正确: path=%s err=%s", resp.PosterPath, resp.PosterError)
-	}
-}
-
-func TestUploadPlaceholder_ReturnsProbeUnavailableError(t *testing.T) {
-	cfg := testConfig()
-	cfg.StoragePath = t.TempDir()
-	withProbeStub(t, func(path string) (*media.VideoMeta, error) {
-		return nil, fmt.Errorf("%w: 请先安装 ffprobe", media.ErrProbeUnavailable)
-	})
-	withPosterStub(t, func(videoPath, posterPath string) error {
-		return fmt.Errorf("%w: 请先安装 ffmpeg", media.ErrPosterGeneratorUnavailable)
-	})
-	router := NewRouter(cfg, http.NotFoundHandler(), okRegistrar())
-	req := uploadRequest(t, "/api/media/upload", "demo.mp4", mp4Sample(), true)
-	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, cfg.JWTSecret, "alice")})
-	w := httptest.NewRecorder()
-
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusCreated {
-		t.Fatalf("期望 201，得到 %d", w.Code)
-	}
-	var resp struct {
-		Path        string `json:"path"`
-		PosterPath  string `json:"poster_path"`
-		PosterError string `json:"poster_error"`
-		ProbeError  string `json:"probe_error"`
-		Meta        struct {
-			FormatName string `json:"format_name"`
-		} `json:"meta"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("解析响应失败: %v", err)
-	}
-	if resp.Path == "" {
-		t.Fatal("ffprobe 缺失时仍应返回视频路径")
-	}
-	if resp.Meta.FormatName != "mp4" {
-		t.Fatalf("降级元数据不正确: %+v", resp.Meta)
-	}
-	if resp.ProbeError == "" {
-		t.Fatal("ffprobe 缺失时应返回 probe_error")
-	}
-	if resp.PosterPath != "" || resp.PosterError == "" {
-		t.Fatalf("缺少 ffmpeg 时应仅返回 poster 错误: path=%s err=%s", resp.PosterPath, resp.PosterError)
-	}
-}
-
-func TestUploadPlaceholder_ReturnsInvalidVideoError(t *testing.T) {
-	cfg := testConfig()
-	cfg.StoragePath = t.TempDir()
-	withProbeStub(t, func(path string) (*media.VideoMeta, error) {
-		return nil, fmt.Errorf("%w: 文件损坏", media.ErrInvalidVideo)
-	})
-	router := NewRouter(cfg, http.NotFoundHandler(), okRegistrar())
-	req := uploadRequest(t, "/api/media/upload", "demo.mp4", mp4Sample(), true)
-	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, cfg.JWTSecret, "alice")})
-	w := httptest.NewRecorder()
-
-	router.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("期望 400，得到 %d", w.Code)
-	}
-}
-
 func TestUploadPlaceholder_CleansFileWhenRegisterFails(t *testing.T) {
 	cfg := testConfig()
 	cfg.StoragePath = t.TempDir()
-	withProbeStub(t, func(path string) (*media.VideoMeta, error) {
-		return &media.VideoMeta{Width: 1920, Height: 1080, DurationMS: 12345, FormatName: "mp4", CodecName: "h264"}, nil
-	})
 	router := NewRouter(cfg, http.NotFoundHandler(), stubRegistrar{register: func(input service.RegisterUploadedVideoInput) (*storage.Photo, error) {
 		return nil, fmt.Errorf("保存视频记录失败")
 	}})

@@ -24,9 +24,6 @@ import (
 const authCookieName = "photoalbum_token"
 const tempMediaDirName = ".media-upload-tmp"
 
-var probeVideoFunc = media.ProbeVideo
-var generatePosterFunc = media.GeneratePoster
-
 type videoRegistrar interface {
 	RegisterUploadedVideo(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
 	GetPhotoByUUIDAny(uuid string, userID int64) (*storage.Photo, error)
@@ -161,16 +158,7 @@ func handleUploadPlaceholder(cfg *config.Config, registrar videoRegistrar) gin.H
 			return
 		}
 
-		meta, err := probeVideoFunc(tempPath)
-		if err != nil {
-			if errors.Is(err, media.ErrProbeUnavailable) {
-				meta = &media.VideoMeta{FormatName: "mp4"}
-			} else {
-				_ = os.Remove(tempPath)
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
-			}
-		}
+		meta := &media.VideoMeta{FormatName: "mp4"}
 
 		uuid := strings.TrimSuffix(filepath.Base(tempPath), filepath.Ext(tempPath))
 		finalPath := filepath.Join(cfg.StoragePath, uuid+filepath.Ext(file.Filename))
@@ -202,24 +190,13 @@ func handleUploadPlaceholder(cfg *config.Config, registrar videoRegistrar) gin.H
 			return
 		}
 
-		posterPath := media.PosterPath(cfg.StoragePath, photo.UUID)
-		posterError := ""
-		probeError := ""
-		if meta.Width == 0 || meta.Height == 0 || meta.DurationMS == 0 {
-			probeError = "ffprobe 不可用，已使用降级模式上传视频"
-		}
-		if err := generatePosterFunc(finalPath, posterPath); err != nil {
-			posterError = err.Error()
-			posterPath = ""
-		}
-
 		c.JSON(http.StatusCreated, gin.H{
 			"message":      "视频上传成功",
 			"filename":     file.Filename,
 			"path":         finalPath,
-			"poster_path":  posterPath,
-			"poster_error": posterError,
-			"probe_error":  probeError,
+			"poster_path":  "",
+			"poster_error": "",
+			"probe_error":  "",
 			"meta":         meta,
 			"photo":        photo,
 		})

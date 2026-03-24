@@ -32,6 +32,14 @@ const api = {
     return r.json();
   },
 };
+
+const videoPosterPlaceholder = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240">
+  <rect width="240" height="240" rx="24" fill="#1b2a2f"/>
+  <circle cx="120" cy="120" r="54" fill="#2d6a5f"/>
+  <polygon points="105,90 105,150 152,120" fill="#f4f1e8"/>
+  <text x="120" y="198" font-size="18" text-anchor="middle" fill="#d9e4dd" font-family="sans-serif">VIDEO</text>
+</svg>`)} `;
 function formatDate(iso) {
   const d = new Date(iso);
   return d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -364,7 +372,7 @@ function isVideoMedia(photo) {
 }
 
 function mediaThumbURL(photo) {
-  return isVideoMedia(photo) ? `/media/posters/${photo.uuid}` : `/media/thumbnails/${photo.uuid}`;
+  return isVideoMedia(photo) ? videoPosterPlaceholder : `/media/thumbnails/${photo.uuid}`;
 }
 
 function mediaFileURL(photo) {

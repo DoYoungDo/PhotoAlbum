@@ -163,13 +163,13 @@ func handleUploadPlaceholder(cfg *config.Config, registrar videoRegistrar) gin.H
 
 		meta, err := probeVideoFunc(tempPath)
 		if err != nil {
-			_ = os.Remove(tempPath)
-			status := http.StatusBadRequest
 			if errors.Is(err, media.ErrProbeUnavailable) {
-				status = http.StatusInternalServerError
+				meta = &media.VideoMeta{FormatName: "mp4"}
+			} else {
+				_ = os.Remove(tempPath)
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
 			}
-			c.JSON(status, gin.H{"error": err.Error()})
-			return
 		}
 
 		uuid := strings.TrimSuffix(filepath.Base(tempPath), filepath.Ext(tempPath))
@@ -204,6 +204,10 @@ func handleUploadPlaceholder(cfg *config.Config, registrar videoRegistrar) gin.H
 
 		posterPath := media.PosterPath(cfg.StoragePath, photo.UUID)
 		posterError := ""
+		probeError := ""
+		if meta.Width == 0 || meta.Height == 0 || meta.DurationMS == 0 {
+			probeError = "ffprobe 不可用，已使用降级模式上传视频"
+		}
 		if err := generatePosterFunc(finalPath, posterPath); err != nil {
 			posterError = err.Error()
 			posterPath = ""
@@ -215,6 +219,7 @@ func handleUploadPlaceholder(cfg *config.Config, registrar videoRegistrar) gin.H
 			"path":         finalPath,
 			"poster_path":  posterPath,
 			"poster_error": posterError,
+			"probe_error":  probeError,
 			"meta":         meta,
 			"photo":        photo,
 		})

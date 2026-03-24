@@ -3,7 +3,6 @@ package api
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"mime/multipart"
 	"net/http"
@@ -263,6 +262,7 @@ func TestUploadPlaceholder_SavesFinalFileAndRecordAfterValidation(t *testing.T) 
 		Path        string `json:"path"`
 		PosterPath  string `json:"poster_path"`
 		PosterError string `json:"poster_error"`
+		ProbeError  string `json:"probe_error"`
 		Meta        struct {
 			Width      int    `json:"width"`
 			Height     int    `json:"height"`
@@ -294,6 +294,9 @@ func TestUploadPlaceholder_SavesFinalFileAndRecordAfterValidation(t *testing.T) 
 	}
 	if resp.PosterPath == "" || resp.PosterError != "" {
 		t.Fatalf("poster 返回不正确: path=%s err=%s", resp.PosterPath, resp.PosterError)
+	}
+	if resp.ProbeError != "" {
+		t.Fatalf("正常探测时不应返回 probe 错误: %s", resp.ProbeError)
 	}
 	if _, err := os.Stat(resp.PosterPath); err != nil {
 		t.Fatalf("poster 文件应存在: %v", err)
@@ -354,6 +357,9 @@ func TestUploadPlaceholder_ReturnsProbeUnavailableError(t *testing.T) {
 	withProbeStub(t, func(path string) (*media.VideoMeta, error) {
 		return nil, fmt.Errorf("%w: 请先安装 ffprobe", media.ErrProbeUnavailable)
 	})
+	withPosterStub(t, func(videoPath, posterPath string) error {
+		return fmt.Errorf("%w: 请先安装 ffmpeg", media.ErrPosterGeneratorUnavailable)
+	})
 	router := NewRouter(cfg, http.NotFoundHandler(), okRegistrar())
 	req := uploadRequest(t, "/api/media/upload", "demo.mp4", mp4Sample(), true)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, cfg.JWTSecret, "alice")})
@@ -361,15 +367,32 @@ func TestUploadPlaceholder_ReturnsProbeUnavailableError(t *testing.T) {
 
 	router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("期望 500，得到 %d", w.Code)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("期望 201，得到 %d", w.Code)
 	}
-	entries, err := os.ReadDir(filepath.Join(cfg.StoragePath, tempMediaDirName))
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("读取临时目录失败: %v", err)
+	var resp struct {
+		Path        string `json:"path"`
+		PosterPath  string `json:"poster_path"`
+		PosterError string `json:"poster_error"`
+		ProbeError  string `json:"probe_error"`
+		Meta        struct {
+			FormatName string `json:"format_name"`
+		} `json:"meta"`
 	}
-	if len(entries) != 0 {
-		t.Fatalf("探测失败后应清理临时文件，实际剩余 %d 个", len(entries))
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("解析响应失败: %v", err)
+	}
+	if resp.Path == "" {
+		t.Fatal("ffprobe 缺失时仍应返回视频路径")
+	}
+	if resp.Meta.FormatName != "mp4" {
+		t.Fatalf("降级元数据不正确: %+v", resp.Meta)
+	}
+	if resp.ProbeError == "" {
+		t.Fatal("ffprobe 缺失时应返回 probe_error")
+	}
+	if resp.PosterPath != "" || resp.PosterError == "" {
+		t.Fatalf("缺少 ffmpeg 时应仅返回 poster 错误: path=%s err=%s", resp.PosterPath, resp.PosterError)
 	}
 }
 

@@ -16,10 +16,13 @@ import (
 	"github.com/google/uuid"
 
 	"photoalbum/internal/config"
+	"photoalbum/internal/media"
 )
 
 const authCookieName = "photoalbum_token"
 const tempMediaDirName = ".media-upload-tmp"
+
+var probeVideoFunc = media.ProbeVideo
 
 type contextKey string
 
@@ -94,10 +97,22 @@ func handleUploadPlaceholder(cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
+		meta, err := probeVideoFunc(tempPath)
+		if err != nil {
+			_ = os.Remove(tempPath)
+			status := http.StatusBadRequest
+			if errors.Is(err, media.ErrProbeUnavailable) {
+				status = http.StatusInternalServerError
+			}
+			c.JSON(status, gin.H{"error": err.Error()})
+			return
+		}
+
 		c.JSON(http.StatusCreated, gin.H{
-			"message":  "媒体文件已临时保存，后续将接入完整处理流程",
+			"message":  "媒体文件已临时保存并完成基础探测",
 			"filename": file.Filename,
 			"path":     tempPath,
+			"meta":     meta,
 		})
 	}
 }

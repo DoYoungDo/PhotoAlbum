@@ -1,9 +1,11 @@
 package api
 
 import (
+	"archive/zip"
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -21,13 +23,18 @@ import (
 )
 
 type stubRegistrar struct {
-	register    func(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
-	deletePhoto func(id int64, userID int64) error
-	getPhoto    func(id int64, userID int64) (*storage.Photo, error)
-	getByUUID   func(uuid string, userID int64) (*storage.Photo, error)
-	getTimeline func(params storage.ListPhotosParams) (*storage.PhotoPage, error)
-	mediaPath   func(photo *storage.Photo) string
-	posterPath  func(photo *storage.Photo) string
+	register               func(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
+	deletePhoto            func(id int64, userID int64) error
+	emptyTrash             func(userID int64) error
+	getDownloadEntries     func(photoIDs []int64, userID int64) ([]service.DownloadEntry, error)
+	getPhoto               func(id int64, userID int64) (*storage.Photo, error)
+	getByUUID              func(uuid string, userID int64) (*storage.Photo, error)
+	getTrash               func(params storage.ListPhotosParams) (*storage.PhotoPage, error)
+	getTimeline            func(params storage.ListPhotosParams) (*storage.PhotoPage, error)
+	mediaPath              func(photo *storage.Photo) string
+	permanentlyDeletePhoto func(id int64, userID int64) error
+	posterPath             func(photo *storage.Photo) string
+	restorePhoto           func(id int64, userID int64) error
 }
 
 func (s stubRegistrar) RegisterUploadedVideo(input service.RegisterUploadedVideoInput) (*storage.Photo, error) {
@@ -36,6 +43,18 @@ func (s stubRegistrar) RegisterUploadedVideo(input service.RegisterUploadedVideo
 
 func (s stubRegistrar) DeletePhoto(id int64, userID int64) error {
 	return s.deletePhoto(id, userID)
+}
+
+func (s stubRegistrar) EmptyTrash(userID int64) error {
+	return s.emptyTrash(userID)
+}
+
+func (s stubRegistrar) GetDownloadEntries(photoIDs []int64, userID int64) ([]service.DownloadEntry, error) {
+	return s.getDownloadEntries(photoIDs, userID)
+}
+
+func (s stubRegistrar) GetTrash(params storage.ListPhotosParams) (*storage.PhotoPage, error) {
+	return s.getTrash(params)
 }
 
 func (s stubRegistrar) GetPhoto(id int64, userID int64) (*storage.Photo, error) {
@@ -56,6 +75,14 @@ func (s stubRegistrar) MediaPath(photo *storage.Photo) string {
 
 func (s stubRegistrar) PosterPath(photo *storage.Photo) string {
 	return s.posterPath(photo)
+}
+
+func (s stubRegistrar) PermanentlyDeletePhoto(id int64, userID int64) error {
+	return s.permanentlyDeletePhoto(id, userID)
+}
+
+func (s stubRegistrar) RestorePhoto(id int64, userID int64) error {
+	return s.restorePhoto(id, userID)
 }
 
 func okRegistrar() stubRegistrar {
@@ -82,6 +109,18 @@ func okRegistrar() stubRegistrar {
 		}, nil
 	}, deletePhoto: func(id int64, userID int64) error {
 		return nil
+	}, emptyTrash: func(userID int64) error {
+		return nil
+	}, getDownloadEntries: func(photoIDs []int64, userID int64) ([]service.DownloadEntry, error) {
+		entries := make([]service.DownloadEntry, 0, len(photoIDs))
+		for _, id := range photoIDs {
+			entries = append(entries, service.DownloadEntry{
+				FileName: fmt.Sprintf("media-%d.mp4", id),
+				Path:     mediaFilePath(&storage.Photo{UUID: fmt.Sprintf("media-%d", id)}),
+				MimeType: "video/mp4",
+			})
+		}
+		return entries, nil
 	}, getPhoto: func(id int64, userID int64) (*storage.Photo, error) {
 		return &storage.Photo{
 			ID:           id,
@@ -101,6 +140,17 @@ func okRegistrar() stubRegistrar {
 			MimeType:     "video/mp4",
 			UploadedBy:   userID,
 		}, nil
+	}, getTrash: func(params storage.ListPhotosParams) (*storage.PhotoPage, error) {
+		return &storage.PhotoPage{Photos: []*storage.Photo{
+			{
+				ID:           3,
+				UUID:         "trash-1",
+				OriginalName: "trash.mp4",
+				MediaKind:    storage.MediaKindVideo,
+				MimeType:     "video/mp4",
+				UploadedBy:   params.UserID,
+			},
+		}, NextCursor: "", HasMore: false}, nil
 	}, getTimeline: func(params storage.ListPhotosParams) (*storage.PhotoPage, error) {
 		return &storage.PhotoPage{Photos: []*storage.Photo{
 			{
@@ -121,7 +171,11 @@ func okRegistrar() stubRegistrar {
 				UploadedBy:   params.UserID,
 			},
 		}, NextCursor: "", HasMore: false}, nil
-	}, mediaPath: mediaFilePath, posterPath: posterFilePath}
+	}, mediaPath: mediaFilePath, permanentlyDeletePhoto: func(id int64, userID int64) error {
+		return nil
+	}, posterPath: posterFilePath, restorePhoto: func(id int64, userID int64) error {
+		return nil
+	}}
 }
 
 func testConfig() *config.Config {
@@ -371,6 +425,133 @@ func TestDeleteMedia_ReturnsServiceError(t *testing.T) {
 	}
 }
 
+func TestListTrashMedia_RequiresAuth(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/api/media/trash", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("期望 401，得到 %d", w.Code)
+	}
+}
+
+func TestListTrashMedia_Success(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/api/media/trash", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	var page struct {
+		Photos []struct {
+			ID int64 `json:"id"`
+		} `json:"photos"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+		t.Fatalf("解析回收站响应失败: %v", err)
+	}
+	if len(page.Photos) != 1 || page.Photos[0].ID != 3 {
+		t.Fatalf("回收站响应不正确: %+v", page)
+	}
+}
+
+func TestRestoreMedia_Success(t *testing.T) {
+	called := false
+	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+		register:               okRegistrar().register,
+		deletePhoto:            okRegistrar().deletePhoto,
+		emptyTrash:             okRegistrar().emptyTrash,
+		getDownloadEntries:     okRegistrar().getDownloadEntries,
+		getPhoto:               okRegistrar().getPhoto,
+		getByUUID:              okRegistrar().getByUUID,
+		getTrash:               okRegistrar().getTrash,
+		getTimeline:            okRegistrar().getTimeline,
+		mediaPath:              okRegistrar().mediaPath,
+		permanentlyDeletePhoto: okRegistrar().permanentlyDeletePhoto,
+		posterPath:             okRegistrar().posterPath,
+		restorePhoto:           func(id int64, userID int64) error { called = true; return nil },
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/media/6/restore", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	if !called {
+		t.Fatal("应调用恢复逻辑")
+	}
+}
+
+func TestHardDeleteMedia_Success(t *testing.T) {
+	called := false
+	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+		register:               okRegistrar().register,
+		deletePhoto:            okRegistrar().deletePhoto,
+		emptyTrash:             okRegistrar().emptyTrash,
+		getDownloadEntries:     okRegistrar().getDownloadEntries,
+		getPhoto:               okRegistrar().getPhoto,
+		getByUUID:              okRegistrar().getByUUID,
+		getTrash:               okRegistrar().getTrash,
+		getTimeline:            okRegistrar().getTimeline,
+		mediaPath:              okRegistrar().mediaPath,
+		permanentlyDeletePhoto: func(id int64, userID int64) error { called = true; return nil },
+		posterPath:             okRegistrar().posterPath,
+		restorePhoto:           okRegistrar().restorePhoto,
+	})
+	req := httptest.NewRequest(http.MethodDelete, "/api/media/trash/6", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	if !called {
+		t.Fatal("应调用永久删除逻辑")
+	}
+}
+
+func TestEmptyTrashMedia_Success(t *testing.T) {
+	called := false
+	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+		register:               okRegistrar().register,
+		deletePhoto:            okRegistrar().deletePhoto,
+		emptyTrash:             func(userID int64) error { called = true; return nil },
+		getDownloadEntries:     okRegistrar().getDownloadEntries,
+		getPhoto:               okRegistrar().getPhoto,
+		getByUUID:              okRegistrar().getByUUID,
+		getTrash:               okRegistrar().getTrash,
+		getTimeline:            okRegistrar().getTimeline,
+		mediaPath:              okRegistrar().mediaPath,
+		permanentlyDeletePhoto: okRegistrar().permanentlyDeletePhoto,
+		posterPath:             okRegistrar().posterPath,
+		restorePhoto:           okRegistrar().restorePhoto,
+	})
+	req := httptest.NewRequest(http.MethodDelete, "/api/media/trash", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	if !called {
+		t.Fatal("应调用清空回收站逻辑")
+	}
+}
+
 func TestDownloadMedia_RequiresAuth(t *testing.T) {
 	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media/1/download", nil)
@@ -449,6 +630,121 @@ func TestDownloadMedia_NotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("期望 404，得到 %d", w.Code)
+	}
+}
+
+func TestDownloadMediaBatch_RequiresAuth(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodPost, "/api/media/download", strings.NewReader(`{"media_ids":[1]}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("期望 401，得到 %d", w.Code)
+	}
+}
+
+func TestDownloadMediaBatch_UsesMediaIDsAndReturnsZip(t *testing.T) {
+	cfg := testConfig()
+	storageDir := t.TempDir()
+	cfg.StoragePath = storageDir
+	firstFile := filepath.Join(storageDir, "media-1.mp4")
+	secondFile := filepath.Join(storageDir, "media-2.mp4")
+	if err := os.WriteFile(firstFile, []byte("video-one"), 0644); err != nil {
+		t.Fatalf("创建测试媒体文件失败: %v", err)
+	}
+	if err := os.WriteFile(secondFile, []byte("video-two"), 0644); err != nil {
+		t.Fatalf("创建测试媒体文件失败: %v", err)
+	}
+
+	var gotIDs []int64
+	router := NewRouter(cfg, http.NotFoundHandler(), stubRegistrar{
+		register:    okRegistrar().register,
+		deletePhoto: okRegistrar().deletePhoto,
+		getDownloadEntries: func(photoIDs []int64, userID int64) ([]service.DownloadEntry, error) {
+			gotIDs = append([]int64(nil), photoIDs...)
+			return []service.DownloadEntry{
+				{FileName: "clip-a.mp4", Path: firstFile, MimeType: "video/mp4"},
+				{FileName: "clip-b.mp4", Path: secondFile, MimeType: "video/mp4"},
+			}, nil
+		},
+		getPhoto:    okRegistrar().getPhoto,
+		getByUUID:   okRegistrar().getByUUID,
+		getTimeline: okRegistrar().getTimeline,
+		mediaPath:   okRegistrar().mediaPath,
+		posterPath:  okRegistrar().posterPath,
+	})
+	body := bytes.NewBufferString(`{"media_ids":[7,9]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/media/download", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, cfg.JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	if len(gotIDs) != 2 || gotIDs[0] != 7 || gotIDs[1] != 9 {
+		t.Fatalf("media_ids 透传不正确: %+v", gotIDs)
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "application/zip") {
+		t.Fatalf("Content-Type 不正确: %s", ct)
+	}
+
+	zr, err := zip.NewReader(bytes.NewReader(w.Body.Bytes()), int64(w.Body.Len()))
+	if err != nil {
+		t.Fatalf("解析 zip 失败: %v", err)
+	}
+	if len(zr.File) != 2 {
+		t.Fatalf("期望 2 个文件，得到 %d", len(zr.File))
+	}
+	file, err := zr.File[0].Open()
+	if err != nil {
+		t.Fatalf("打开 zip 条目失败: %v", err)
+	}
+	data, err := io.ReadAll(file)
+	_ = file.Close()
+	if err != nil {
+		t.Fatalf("读取 zip 条目失败: %v", err)
+	}
+	if string(data) != "video-one" {
+		t.Fatalf("zip 内容不正确: %s", string(data))
+	}
+}
+
+func TestDownloadMediaBatch_AcceptsLegacyPhotoIDs(t *testing.T) {
+	called := false
+	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+		register:    okRegistrar().register,
+		deletePhoto: okRegistrar().deletePhoto,
+		getDownloadEntries: func(photoIDs []int64, userID int64) ([]service.DownloadEntry, error) {
+			called = true
+			if len(photoIDs) != 1 || photoIDs[0] != 5 {
+				return nil, fmt.Errorf("unexpected ids: %+v", photoIDs)
+			}
+			return []service.DownloadEntry{}, nil
+		},
+		getPhoto:    okRegistrar().getPhoto,
+		getByUUID:   okRegistrar().getByUUID,
+		getTimeline: okRegistrar().getTimeline,
+		mediaPath:   okRegistrar().mediaPath,
+		posterPath:  okRegistrar().posterPath,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/media/download", strings.NewReader(`{"photo_ids":[5]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	if !called {
+		t.Fatal("应调用批量下载逻辑")
 	}
 }
 

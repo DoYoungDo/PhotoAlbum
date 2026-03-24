@@ -711,7 +711,7 @@ async function loadMoreTrash() {
   if (state.trashLoading || !state.trashHasMore) return;
   state.trashLoading = true;
   try {
-    const url = '/api/trash' + (state.trashCursor ? `?cursor=${encodeURIComponent(state.trashCursor)}` : '');
+		const url = '/api/media/trash' + (state.trashCursor ? `?cursor=${encodeURIComponent(state.trashCursor)}` : '');
     const page = await api.get(url);
     state.trashPhotos.push(...(page.photos || []));
     state.trashCursor = page.next_cursor || '';
@@ -758,11 +758,11 @@ function renderTrashGroups(newPhotos) {
 }
 async function emptyTrash() {
   if (!confirm('确定要永久删除回收站中所有照片/视频吗？此操作不可恢复。')) return;
-  try { await api.del('/api/trash'); switchView('trash'); }
+  try { await api.del('/api/media/trash'); switchView('trash'); }
   catch(e) { alert('操作失败: ' + (e.error || e)); }
 }
 async function restorePhoto(id) {
-  try { await api.post(`/api/photos/${id}/restore`, {}); switchView('trash'); }
+  try { await api.post(`/api/media/${id}/restore`, {}); switchView('trash'); }
   catch(e) { alert('恢复失败: ' + (e.error || e)); }
 }
 
@@ -783,7 +783,7 @@ async function restoreSelected() {
   const ids = [...state.selected];
   clearSelection();
   for (const id of ids) {
-    try { await api.post(`/api/photos/${id}/restore`, {}); }
+		try { await api.post(`/api/media/${id}/restore`, {}); }
     catch(e) { console.error('恢复失败:', id, e); }
   }
   switchView('trash');
@@ -795,7 +795,7 @@ async function hardDeleteSelected() {
   const ids = [...state.selected];
   clearSelection();
   for (const id of ids) {
-    try { await api.del(`/api/trash/${id}`); }
+		try { await api.del(`/api/media/trash/${id}`); }
     catch(e) { console.error('永久删除失败:', id, e); }
   }
   switchView('trash');
@@ -992,8 +992,8 @@ async function downloadSelected() {
 	const btn = $('#download-sel-btn');
 	try {
 		await withButtonBusy(btn, '打包中…', async () => {
-			await triggerPostDownload('/api/photos/download', {
-				photo_ids: [...state.selected],
+			await triggerPostDownload('/api/media/download', {
+				media_ids: [...state.selected],
 			}, `photoalbum-selection-${Date.now()}.zip`);
 		});
 	} catch (e) {

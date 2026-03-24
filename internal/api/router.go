@@ -29,11 +29,21 @@ const tempMediaDirName = ".media-upload-tmp"
 type videoRegistrar interface {
 	RegisterUploadedVideo(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
 	DeletePhoto(id int64, userID int64) error
+	EmptyTrash(userID int64) error
 	GetPhoto(id int64, userID int64) (*storage.Photo, error)
 	GetPhotoByUUIDAny(uuid string, userID int64) (*storage.Photo, error)
+	GetDownloadEntries(photoIDs []int64, userID int64) ([]service.DownloadEntry, error)
+	GetTrash(params storage.ListPhotosParams) (*storage.PhotoPage, error)
+	PermanentlyDeletePhoto(id int64, userID int64) error
+	RestorePhoto(id int64, userID int64) error
 	GetTimeline(params storage.ListPhotosParams) (*storage.PhotoPage, error)
 	MediaPath(photo *storage.Photo) string
 	PosterPath(photo *storage.Photo) string
+}
+
+type mediaDownloadRequest struct {
+	MediaIDs []int64 `json:"media_ids"`
+	PhotoIDs []int64 `json:"photo_ids"`
 }
 
 type contextKey string
@@ -59,9 +69,14 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 	media := r.Group("/api/media")
 	{
 		media.GET("", authMiddleware(cfg), handleListMedia(cfg, registrar))
+		media.GET("/trash", authMiddleware(cfg), handleListTrashMedia(cfg, registrar))
 		media.GET(":id", authMiddleware(cfg), handleGetMedia(cfg, registrar))
 		media.GET(":id/download", authMiddleware(cfg), handleDownloadMedia(cfg, registrar))
+		media.POST("/download", authMiddleware(cfg), handleDownloadMediaBatch(cfg, registrar))
+		media.POST(":id/restore", authMiddleware(cfg), handleRestoreMedia(cfg, registrar))
 		media.DELETE(":id", authMiddleware(cfg), handleDeleteMedia(cfg, registrar))
+		media.DELETE("/trash", authMiddleware(cfg), handleEmptyTrashMedia(cfg, registrar))
+		media.DELETE("/trash/:id", authMiddleware(cfg), handleHardDeleteMedia(cfg, registrar))
 		media.POST("/upload", authMiddleware(cfg), handleUploadPlaceholder(cfg, registrar))
 	}
 
@@ -157,6 +172,140 @@ func handleDeleteMedia(cfg *config.Config, registrar videoRegistrar) gin.Handler
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"message": "已移入回收站"})
+	}
+}
+
+func handleRestoreMedia(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		if err != nil || id <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "照片/视频ID 无效"})
+			return
+		}
+		if err := registrar.RestorePhoto(id, userID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "恢复成功"})
+	}
+}
+
+func handleListTrashMedia(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		page, err := registrar.GetTrash(storage.ListPhotosParams{
+			UserID: userID,
+			Cursor: c.Query("cursor"),
+			Limit:  30,
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, page)
+	}
+}
+
+func handleEmptyTrashMedia(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		if err := registrar.EmptyTrash(userID); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "回收站已清空"})
+	}
+}
+
+func handleHardDeleteMedia(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		if err != nil || id <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "照片/视频ID 无效"})
+			return
+		}
+		if err := registrar.PermanentlyDeletePhoto(id, userID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "已永久删除"})
+	}
+}
+
+func handleDownloadMediaBatch(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+
+		var req mediaDownloadRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求体"})
+			return
+		}
+
+		ids := req.MediaIDs
+		if len(ids) == 0 {
+			ids = req.PhotoIDs
+		}
+		if len(ids) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "media_ids 不能为空"})
+			return
+		}
+
+		entries, err := registrar.GetDownloadEntries(ids, userID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		zipName := time.Now().Format("photoalbum-selection-20060102-150405.zip")
+		c.Header("Content-Type", "application/zip")
+		c.Header("Content-Disposition", contentDispositionAttachment(zipName))
+		if err := writeZipResponse(c.Writer, entries); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "打包下载失败"})
+			return
+		}
 	}
 }
 

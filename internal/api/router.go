@@ -28,6 +28,7 @@ const tempMediaDirName = ".media-upload-tmp"
 
 type videoRegistrar interface {
 	AddPhoto(albumID int64, photoID int64, userID int64) error
+	CreateAlbum(name, description string, userID int64) (*storage.Album, error)
 	GetAlbum(id int64, userID int64) (*storage.Album, error)
 	GetAlbumDownloadEntries(albumID int64, userID int64) (string, []service.DownloadEntry, error)
 	ListAlbums(userID int64) ([]*storage.Album, error)
@@ -57,6 +58,11 @@ type albumMediaRequest struct {
 	PhotoID int64 `json:"photo_id"`
 }
 
+type albumRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
 type contextKey string
 
 const userContextKey contextKey = "user"
@@ -80,6 +86,7 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 	media := r.Group("/api/media")
 	{
 		media.GET("/albums", authMiddleware(cfg), handleListAlbumsMedia(cfg, registrar))
+		media.POST("/albums", authMiddleware(cfg), handleCreateAlbumMedia(cfg, registrar))
 		media.GET("/albums/:id/detail", authMiddleware(cfg), handleGetAlbumDetail(cfg, registrar))
 		media.GET("/albums/:id/download", authMiddleware(cfg), handleDownloadAlbumMedia(cfg, registrar))
 		media.GET("/albums/:id", authMiddleware(cfg), handleListAlbumMedia(cfg, registrar))
@@ -383,6 +390,31 @@ func handleListAlbumsMedia(cfg *config.Config, registrar videoRegistrar) gin.Han
 			return
 		}
 		c.JSON(http.StatusOK, albums)
+	}
+}
+
+func handleCreateAlbumMedia(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		var req albumRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求体"})
+			return
+		}
+		album, err := registrar.CreateAlbum(req.Name, req.Description, userID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusCreated, album)
 	}
 }
 

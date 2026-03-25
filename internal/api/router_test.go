@@ -24,6 +24,7 @@ import (
 
 type stubRegistrar struct {
 	addPhoto                func(albumID int64, photoID int64, userID int64) error
+	createAlbum             func(name, description string, userID int64) (*storage.Album, error)
 	getAlbum                func(id int64, userID int64) (*storage.Album, error)
 	getAlbumDownloadEntries func(albumID int64, userID int64) (string, []service.DownloadEntry, error)
 	listAlbums              func(userID int64) ([]*storage.Album, error)
@@ -49,6 +50,10 @@ func (s stubRegistrar) RegisterUploadedVideo(input service.RegisterUploadedVideo
 
 func (s stubRegistrar) AddPhoto(albumID int64, photoID int64, userID int64) error {
 	return s.addPhoto(albumID, photoID, userID)
+}
+
+func (s stubRegistrar) CreateAlbum(name, description string, userID int64) (*storage.Album, error) {
+	return s.createAlbum(name, description, userID)
 }
 
 func (s stubRegistrar) GetAlbum(id int64, userID int64) (*storage.Album, error) {
@@ -124,6 +129,8 @@ func okRegistrar() stubRegistrar {
 	}
 	return stubRegistrar{addPhoto: func(albumID int64, photoID int64, userID int64) error {
 		return nil
+	}, createAlbum: func(name, description string, userID int64) (*storage.Album, error) {
+		return &storage.Album{ID: 8, Name: name, Description: description, CreatedBy: userID, CreatedAt: time.Now()}, nil
 	}, getAlbum: func(id int64, userID int64) (*storage.Album, error) {
 		coverID := int64(12)
 		return &storage.Album{ID: id, Name: "旅行", Description: "相册描述", CreatedBy: userID, CoverPhotoID: &coverID, PhotoCount: 2}, nil
@@ -587,6 +594,73 @@ func TestListAlbumsMedia_Success(t *testing.T) {
 	}
 	if albums[0].ID != 1 || albums[1].PhotoCount != 5 {
 		t.Fatalf("相册列表响应不正确: %+v", albums)
+	}
+}
+
+func TestCreateAlbumMedia_RequiresAuth(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodPost, "/api/media/albums", strings.NewReader(`{"name":"旅行"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("期望 401，得到 %d", w.Code)
+	}
+}
+
+func TestCreateAlbumMedia_Success(t *testing.T) {
+	called := false
+	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+		addPhoto: func(albumID int64, photoID int64, userID int64) error { return nil },
+		createAlbum: func(name, description string, userID int64) (*storage.Album, error) {
+			called = true
+			if name != "旅行" || description != "相册描述" {
+				return nil, fmt.Errorf("unexpected payload: %s / %s", name, description)
+			}
+			return &storage.Album{ID: 8, Name: name, Description: description, CreatedBy: userID, CreatedAt: time.Now()}, nil
+		},
+		getAlbum:                okRegistrar().getAlbum,
+		getAlbumDownloadEntries: okRegistrar().getAlbumDownloadEntries,
+		listAlbums:              okRegistrar().listAlbums,
+		removePhoto:             okRegistrar().removePhoto,
+		register:                okRegistrar().register,
+		deletePhoto:             okRegistrar().deletePhoto,
+		emptyTrash:              okRegistrar().emptyTrash,
+		getDownloadEntries:      okRegistrar().getDownloadEntries,
+		getAlbumMedia:           okRegistrar().getAlbumMedia,
+		getPhoto:                okRegistrar().getPhoto,
+		getByUUID:               okRegistrar().getByUUID,
+		getTrash:                okRegistrar().getTrash,
+		getTimeline:             okRegistrar().getTimeline,
+		mediaPath:               okRegistrar().mediaPath,
+		permanentlyDeletePhoto:  okRegistrar().permanentlyDeletePhoto,
+		posterPath:              okRegistrar().posterPath,
+		restorePhoto:            okRegistrar().restorePhoto,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/media/albums", strings.NewReader(`{"name":"旅行","description":"相册描述"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("期望 201，得到 %d", w.Code)
+	}
+	if !called {
+		t.Fatal("应调用新建相册逻辑")
+	}
+	var album struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &album); err != nil {
+		t.Fatalf("解析新建相册响应失败: %v", err)
+	}
+	if album.ID != 8 || album.Name != "旅行" {
+		t.Fatalf("新建相册响应不正确: %+v", album)
 	}
 }
 

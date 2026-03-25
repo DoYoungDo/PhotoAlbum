@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"photoalbum/internal/storage"
 )
@@ -31,6 +32,23 @@ func (s *PhotoService) GetAlbum(id int64, userID int64) (*storage.Album, error) 
 // ListAlbums 获取用户所有相册。
 func (s *PhotoService) ListAlbums(userID int64) ([]*storage.Album, error) {
 	return s.repo.ListAlbums(userID)
+}
+
+// CreateAlbum 创建相册。
+func (s *PhotoService) CreateAlbum(name, description string, userID int64) (*storage.Album, error) {
+	if name == "" {
+		return nil, fmt.Errorf("相册名称不能为空")
+	}
+	album := &storage.Album{
+		Name:        name,
+		Description: description,
+		CreatedBy:   userID,
+		CreatedAt:   time.Now(),
+	}
+	if err := s.repo.CreateAlbum(album); err != nil {
+		return nil, err
+	}
+	return album, nil
 }
 
 // GetAlbumDownloadEntries 获取相册下载条目。

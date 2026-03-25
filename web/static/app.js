@@ -1187,7 +1187,7 @@ async function createAlbum() {
   const name = $('#album-name-input').value.trim();
   if (!name) { alert('请输入相册名称'); return; }
   try {
-    await api.post('/api/albums', { name, description: $('#album-desc-input').value.trim() });
+		await api.post('/api/media/albums', { name, description: $('#album-desc-input').value.trim() });
     $('#create-album-modal').classList.remove('open');
     // 通过 switchView 而不是直接 render，确保菜单高亮和 hash 保持一致。
     switchView('albums');

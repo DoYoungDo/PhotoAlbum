@@ -74,10 +74,6 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/photos", s.auth(s.handleListPhotos))
 	s.mux.HandleFunc("POST /api/photos/upload", s.auth(s.handleUploadPhoto))
 	s.mux.HandleFunc("POST /api/photos/download", s.auth(s.handleDownloadPhotos))
-	s.mux.HandleFunc("GET /api/photos/{id}", s.auth(s.handleGetPhoto))
-	s.mux.HandleFunc("GET /api/photos/{id}/download", s.auth(s.handleDownloadPhoto))
-	s.mux.HandleFunc("DELETE /api/photos/{id}", s.auth(s.handleDeletePhoto))
-	s.mux.HandleFunc("POST /api/photos/{id}/restore", s.auth(s.handleRestorePhoto))
 
 	// 图片文件服务
 	s.mux.HandleFunc("GET /media/photos/{uuid}", s.auth(s.handleServePhoto))

@@ -149,28 +149,6 @@ func (s *Server) handleUploadPhoto(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, result.Photo)
 }
 
-func (s *Server) handleGetPhoto(w http.ResponseWriter, r *http.Request) {
-	userID := s.mustUserID(w, r)
-	if userID == 0 {
-		return
-	}
-	id, err := parseInt64Param(r.PathValue("id"), "照片/视频ID")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	photo, err := s.photoService.GetPhoto(id, userID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if photo == nil {
-		writeError(w, http.StatusNotFound, "照片/视频不存在")
-		return
-	}
-	writeJSON(w, http.StatusOK, photo)
-}
-
 func contentDispositionAttachment(filename string) string {
 	trimmed := strings.ReplaceAll(filename, "\"", "")
 	trimmed = strings.ReplaceAll(trimmed, "\n", "")
@@ -179,31 +157,6 @@ func contentDispositionAttachment(filename string) string {
 		trimmed = "download"
 	}
 	return fmt.Sprintf("attachment; filename=%q; filename*=UTF-8''%s", trimmed, url.PathEscape(trimmed))
-}
-
-func (s *Server) handleDownloadPhoto(w http.ResponseWriter, r *http.Request) {
-	userID := s.mustUserID(w, r)
-	if userID == 0 {
-		return
-	}
-	id, err := parseInt64Param(r.PathValue("id"), "照片/视频ID")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	photo, err := s.photoService.GetPhoto(id, userID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if photo == nil {
-		writeError(w, http.StatusNotFound, "照片/视频不存在")
-		return
-	}
-
-	w.Header().Set("Content-Type", photo.MimeType)
-	w.Header().Set("Content-Disposition", contentDispositionAttachment(photo.OriginalName))
-	http.ServeFile(w, r, s.photoService.PhotoPath(photo))
 }
 
 func (s *Server) handleDownloadPhotos(w http.ResponseWriter, r *http.Request) {
@@ -235,40 +188,6 @@ func (s *Server) handleDownloadPhotos(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "打包下载失败")
 		return
 	}
-}
-
-func (s *Server) handleDeletePhoto(w http.ResponseWriter, r *http.Request) {
-	userID := s.mustUserID(w, r)
-	if userID == 0 {
-		return
-	}
-	id, err := parseInt64Param(r.PathValue("id"), "照片/视频ID")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err := s.photoService.DeletePhoto(id, userID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"message": "已移入回收站"})
-}
-
-func (s *Server) handleRestorePhoto(w http.ResponseWriter, r *http.Request) {
-	userID := s.mustUserID(w, r)
-	if userID == 0 {
-		return
-	}
-	id, err := parseInt64Param(r.PathValue("id"), "照片/视频ID")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err := s.photoService.RestorePhoto(id, userID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"message": "恢复成功"})
 }
 
 func (s *Server) handleServePhoto(w http.ResponseWriter, r *http.Request) {

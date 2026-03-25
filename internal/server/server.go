@@ -83,11 +83,6 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /media/photos/{uuid}", s.auth(s.handleServePhoto))
 	s.mux.HandleFunc("GET /media/thumbnails/{uuid}", s.auth(s.handleServeThumbnail))
 
-	// 回收站 API
-	s.mux.HandleFunc("GET /api/trash", s.auth(s.handleListTrash))
-	s.mux.HandleFunc("DELETE /api/trash/{id}", s.auth(s.handleHardDeleteTrashedPhoto))
-	s.mux.HandleFunc("DELETE /api/trash", s.auth(s.handleEmptyTrash))
-
 }
 
 // writeJSON 写入 JSON 响应

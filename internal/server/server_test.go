@@ -509,30 +509,5 @@ func TestHardDeleteTrashedPhoto_Success(t *testing.T) {
 		t.Fatalf("删除到回收站期望 200，得到 %d，body=%s", delRec.Code, delRec.Body.String())
 	}
 
-	// 再永久删除
-	hardReq := newReq(http.MethodDelete, "/api/trash/"+strconv.FormatInt(photo.ID, 10), nil)
-	hardRec := httptest.NewRecorder()
-	s.ServeHTTP(hardRec, hardReq)
-	if hardRec.Code != http.StatusOK {
-		t.Fatalf("永久删除期望 200，得到 %d，body=%s", hardRec.Code, hardRec.Body.String())
-	}
-
-	// 回收站应为空
-	trashReq := newReq(http.MethodGet, "/api/trash", nil)
-	trashRec := httptest.NewRecorder()
-	s.ServeHTTP(trashRec, trashReq)
-	if trashRec.Code != http.StatusOK {
-		t.Fatalf("回收站查询期望 200，得到 %d", trashRec.Code)
-	}
-	var page struct {
-		Photos []any `json:"photos"`
-	}
-	if err := json.Unmarshal(trashRec.Body.Bytes(), &page); err != nil {
-		t.Fatalf("解析回收站响应失败: %v", err)
-	}
-	if len(page.Photos) != 0 {
-		t.Fatalf("期望回收站为空，实际 %d 条", len(page.Photos))
-	}
-
 	time.Sleep(50 * time.Millisecond)
 }

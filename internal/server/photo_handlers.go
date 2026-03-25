@@ -271,52 +271,6 @@ func (s *Server) handleRestorePhoto(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "恢复成功"})
 }
 
-func (s *Server) handleListTrash(w http.ResponseWriter, r *http.Request) {
-	userID := s.mustUserID(w, r)
-	if userID == 0 {
-		return
-	}
-	page, err := s.photoService.GetTrash(storage.ListPhotosParams{
-		UserID: userID,
-		Cursor: r.URL.Query().Get("cursor"),
-		Limit:  30,
-	})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, page)
-}
-
-func (s *Server) handleEmptyTrash(w http.ResponseWriter, r *http.Request) {
-	userID := s.mustUserID(w, r)
-	if userID == 0 {
-		return
-	}
-	if err := s.photoService.EmptyTrash(userID); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"message": "回收站已清空"})
-}
-
-func (s *Server) handleHardDeleteTrashedPhoto(w http.ResponseWriter, r *http.Request) {
-	userID := s.mustUserID(w, r)
-	if userID == 0 {
-		return
-	}
-	id, err := parseInt64Param(r.PathValue("id"), "照片/视频ID")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err := s.photoService.PermanentlyDeletePhoto(id, userID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"message": "已永久删除"})
-}
-
 func (s *Server) handleServePhoto(w http.ResponseWriter, r *http.Request) {
 	userID := s.mustUserID(w, r)
 	if userID == 0 {

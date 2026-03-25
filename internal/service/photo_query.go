@@ -28,6 +28,11 @@ func (s *PhotoService) AddPhoto(albumID int64, photoID int64, userID int64) erro
 	return s.repo.AddPhotoToAlbum(albumID, photoID, userID)
 }
 
+// RemovePhoto 将媒体从相册移除。
+func (s *PhotoService) RemovePhoto(albumID int64, photoID int64, userID int64) error {
+	return s.repo.RemovePhotoFromAlbum(albumID, photoID, userID)
+}
+
 // GetPhoto 获取单张图片
 func (s *PhotoService) GetPhoto(id int64, userID int64) (*storage.Photo, error) {
 	return s.repo.GetPhotoByID(id, userID)

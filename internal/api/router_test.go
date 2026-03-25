@@ -24,6 +24,7 @@ import (
 
 type stubRegistrar struct {
 	addPhoto               func(albumID int64, photoID int64, userID int64) error
+	removePhoto            func(albumID int64, photoID int64, userID int64) error
 	register               func(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
 	deletePhoto            func(id int64, userID int64) error
 	emptyTrash             func(userID int64) error
@@ -45,6 +46,10 @@ func (s stubRegistrar) RegisterUploadedVideo(input service.RegisterUploadedVideo
 
 func (s stubRegistrar) AddPhoto(albumID int64, photoID int64, userID int64) error {
 	return s.addPhoto(albumID, photoID, userID)
+}
+
+func (s stubRegistrar) RemovePhoto(albumID int64, photoID int64, userID int64) error {
+	return s.removePhoto(albumID, photoID, userID)
 }
 
 func (s stubRegistrar) DeletePhoto(id int64, userID int64) error {
@@ -103,6 +108,8 @@ func okRegistrar() stubRegistrar {
 		return filepath.Join(tTempStoragePath, ".posters", photo.UUID+".jpg")
 	}
 	return stubRegistrar{addPhoto: func(albumID int64, photoID int64, userID int64) error {
+		return nil
+	}, removePhoto: func(albumID int64, photoID int64, userID int64) error {
 		return nil
 	}, register: func(input service.RegisterUploadedVideoInput) (*storage.Photo, error) {
 		return &storage.Photo{
@@ -600,6 +607,75 @@ func TestAddMediaToAlbum_AcceptsLegacyPhotoID(t *testing.T) {
 	}
 	if !called {
 		t.Fatal("应调用兼容 photo_id 的添加逻辑")
+	}
+}
+
+func TestRemoveMediaFromAlbum_RequiresAuth(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodDelete, "/api/media/albums/1/9", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("期望 401，得到 %d", w.Code)
+	}
+}
+
+func TestRemoveMediaFromAlbum_InvalidMediaID(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodDelete, "/api/media/albums/1/abc", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("期望 400，得到 %d", w.Code)
+	}
+}
+
+func TestRemoveMediaFromAlbum_Success(t *testing.T) {
+	called := false
+	var gotAlbumID, gotMediaID int64
+	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+		addPhoto: func(albumID int64, photoID int64, userID int64) error {
+			return nil
+		},
+		removePhoto: func(albumID int64, photoID int64, userID int64) error {
+			called = true
+			gotAlbumID = albumID
+			gotMediaID = photoID
+			return nil
+		},
+		register:               okRegistrar().register,
+		deletePhoto:            okRegistrar().deletePhoto,
+		emptyTrash:             okRegistrar().emptyTrash,
+		getDownloadEntries:     okRegistrar().getDownloadEntries,
+		getAlbumMedia:          okRegistrar().getAlbumMedia,
+		getPhoto:               okRegistrar().getPhoto,
+		getByUUID:              okRegistrar().getByUUID,
+		getTrash:               okRegistrar().getTrash,
+		getTimeline:            okRegistrar().getTimeline,
+		mediaPath:              okRegistrar().mediaPath,
+		permanentlyDeletePhoto: okRegistrar().permanentlyDeletePhoto,
+		posterPath:             okRegistrar().posterPath,
+		restorePhoto:           okRegistrar().restorePhoto,
+	})
+	req := httptest.NewRequest(http.MethodDelete, "/api/media/albums/3/9", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	if !called {
+		t.Fatal("应调用从相册移除逻辑")
+	}
+	if gotAlbumID != 3 || gotMediaID != 9 {
+		t.Fatalf("透传参数不正确: album=%d media=%d", gotAlbumID, gotMediaID)
 	}
 }
 

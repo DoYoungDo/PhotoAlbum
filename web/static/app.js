@@ -1213,7 +1213,7 @@ let _pickerPhotoIds = null;
 let _pickerSelected = null;
 
 async function openAlbumPickerModal(photoIds) {
-  // photoIds: null=用已选集合, 数组=指定图片
+	// photoIds: null=用已选集合, 数组=指定媒体
   _pickerPhotoIds = photoIds;
   _pickerSelected = null;
   const modal = $('#album-picker-modal');
@@ -1261,16 +1261,16 @@ async function openAlbumPickerModal(photoIds) {
 
 async function confirmAlbumPicker() {
   if (!_pickerSelected) { $('#album-picker-hint').textContent = '请先选择一个相册'; return; }
-  const album = _pickerSelected;
-  const ids = _pickerPhotoIds || [...state.selected];
-  if (!ids.length) { $('#album-picker-hint').textContent = '没有选中的图片'; return; }
+	const album = _pickerSelected;
+	const ids = _pickerPhotoIds || [...state.selected];
+	if (!ids.length) { $('#album-picker-hint').textContent = '没有选中的照片/视频'; return; }
 
-  $('#album-picker-confirm').disabled = true;
-  let ok = 0, fail = 0;
-  for (const id of ids) {
-    try { await api.post(`/api/albums/${album.id}/photos`, { photo_id: id }); ok++; }
-    catch(e) { fail++; }
-  }
+	$('#album-picker-confirm').disabled = true;
+	let ok = 0, fail = 0;
+	for (const id of ids) {
+		try { await api.post(`/api/media/albums/${album.id}`, { media_id: id }); ok++; }
+		catch(e) { fail++; }
+	}
   $('#album-picker-confirm').disabled = false;
   $('#album-picker-modal').classList.remove('open');
   showToast(`已添加 ${ok} 条到「${album.name}」${fail ? `，${fail} 条失败` : ''}`);

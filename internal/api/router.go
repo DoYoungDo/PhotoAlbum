@@ -27,6 +27,7 @@ const authCookieName = "photoalbum_token"
 const tempMediaDirName = ".media-upload-tmp"
 
 type videoRegistrar interface {
+	AddPhoto(albumID int64, photoID int64, userID int64) error
 	RegisterUploadedVideo(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
 	DeletePhoto(id int64, userID int64) error
 	EmptyTrash(userID int64) error
@@ -45,6 +46,11 @@ type videoRegistrar interface {
 type mediaDownloadRequest struct {
 	MediaIDs []int64 `json:"media_ids"`
 	PhotoIDs []int64 `json:"photo_ids"`
+}
+
+type albumMediaRequest struct {
+	MediaID int64 `json:"media_id"`
+	PhotoID int64 `json:"photo_id"`
 }
 
 type contextKey string
@@ -70,6 +76,7 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 	media := r.Group("/api/media")
 	{
 		media.GET("/albums/:id", authMiddleware(cfg), handleListAlbumMedia(cfg, registrar))
+		media.POST("/albums/:id", authMiddleware(cfg), handleAddMediaToAlbum(cfg, registrar))
 		media.GET("", authMiddleware(cfg), handleListMedia(cfg, registrar))
 		media.GET("/trash", authMiddleware(cfg), handleListTrashMedia(cfg, registrar))
 		media.GET(":id", authMiddleware(cfg), handleGetMedia(cfg, registrar))
@@ -252,6 +259,44 @@ func handleListAlbumMedia(cfg *config.Config, registrar videoRegistrar) gin.Hand
 			return
 		}
 		c.JSON(http.StatusOK, page)
+	}
+}
+
+func handleAddMediaToAlbum(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		albumID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		if err != nil || albumID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "相册ID 无效"})
+			return
+		}
+
+		var req albumMediaRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求体"})
+			return
+		}
+		mediaID := req.MediaID
+		if mediaID <= 0 {
+			mediaID = req.PhotoID
+		}
+		if mediaID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "media_id 不能为空"})
+			return
+		}
+		if err := registrar.AddPhoto(albumID, mediaID, userID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "已添加到相册"})
 	}
 }
 

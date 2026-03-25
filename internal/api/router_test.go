@@ -24,6 +24,7 @@ import (
 
 type stubRegistrar struct {
 	addPhoto               func(albumID int64, photoID int64, userID int64) error
+	getAlbum               func(id int64, userID int64) (*storage.Album, error)
 	removePhoto            func(albumID int64, photoID int64, userID int64) error
 	register               func(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
 	deletePhoto            func(id int64, userID int64) error
@@ -46,6 +47,10 @@ func (s stubRegistrar) RegisterUploadedVideo(input service.RegisterUploadedVideo
 
 func (s stubRegistrar) AddPhoto(albumID int64, photoID int64, userID int64) error {
 	return s.addPhoto(albumID, photoID, userID)
+}
+
+func (s stubRegistrar) GetAlbum(id int64, userID int64) (*storage.Album, error) {
+	return s.getAlbum(id, userID)
 }
 
 func (s stubRegistrar) RemovePhoto(albumID int64, photoID int64, userID int64) error {
@@ -109,6 +114,9 @@ func okRegistrar() stubRegistrar {
 	}
 	return stubRegistrar{addPhoto: func(albumID int64, photoID int64, userID int64) error {
 		return nil
+	}, getAlbum: func(id int64, userID int64) (*storage.Album, error) {
+		coverID := int64(12)
+		return &storage.Album{ID: id, Name: "旅行", Description: "相册描述", CreatedBy: userID, CoverPhotoID: &coverID, PhotoCount: 2}, nil
 	}, removePhoto: func(albumID int64, photoID int64, userID int64) error {
 		return nil
 	}, register: func(input service.RegisterUploadedVideoInput) (*storage.Photo, error) {
@@ -472,6 +480,56 @@ func TestListAlbumMedia_RequiresAuth(t *testing.T) {
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("期望 401，得到 %d", w.Code)
+	}
+}
+
+func TestGetAlbumDetail_RequiresAuth(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/api/media/albums/1/detail", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("期望 401，得到 %d", w.Code)
+	}
+}
+
+func TestGetAlbumDetail_InvalidAlbumID(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/api/media/albums/abc/detail", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("期望 400，得到 %d", w.Code)
+	}
+}
+
+func TestGetAlbumDetail_Success(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/api/media/albums/5/detail", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	var album struct {
+		ID          int64  `json:"id"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		PhotoCount  int    `json:"photo_count"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &album); err != nil {
+		t.Fatalf("解析相册详情响应失败: %v", err)
+	}
+	if album.ID != 5 || album.Name != "旅行" || album.PhotoCount != 2 {
+		t.Fatalf("相册详情响应不正确: %+v", album)
 	}
 }
 

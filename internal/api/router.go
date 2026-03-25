@@ -28,6 +28,7 @@ const tempMediaDirName = ".media-upload-tmp"
 
 type videoRegistrar interface {
 	AddPhoto(albumID int64, photoID int64, userID int64) error
+	GetAlbum(id int64, userID int64) (*storage.Album, error)
 	RemovePhoto(albumID int64, photoID int64, userID int64) error
 	RegisterUploadedVideo(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
 	DeletePhoto(id int64, userID int64) error
@@ -76,6 +77,7 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 
 	media := r.Group("/api/media")
 	{
+		media.GET("/albums/:id/detail", authMiddleware(cfg), handleGetAlbumDetail(cfg, registrar))
 		media.GET("/albums/:id", authMiddleware(cfg), handleListAlbumMedia(cfg, registrar))
 		media.POST("/albums/:id", authMiddleware(cfg), handleAddMediaToAlbum(cfg, registrar))
 		media.DELETE("/albums/:id/:mediaId", authMiddleware(cfg), handleRemoveMediaFromAlbum(cfg, registrar))
@@ -328,6 +330,35 @@ func handleRemoveMediaFromAlbum(cfg *config.Config, registrar videoRegistrar) gi
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"message": "已从相册移除"})
+	}
+}
+
+func handleGetAlbumDetail(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		albumID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		if err != nil || albumID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "相册ID 无效"})
+			return
+		}
+		album, err := registrar.GetAlbum(albumID, userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if album == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "相册不存在"})
+			return
+		}
+		c.JSON(http.StatusOK, album)
 	}
 }
 

@@ -586,7 +586,7 @@ async function renderAlbumDetail() {
   let album = state.currentAlbum;
   if (!album && state.currentAlbumID) {
     try {
-      album = await api.get(`/api/albums/${state.currentAlbumID}`);
+		album = await api.get(`/api/media/albums/${state.currentAlbumID}/detail`);
       state.currentAlbum = album;
     } catch (e) {
       // 相册不存在或加载失败时回退到相册列表

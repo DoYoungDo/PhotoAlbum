@@ -23,6 +23,11 @@ func (s *PhotoService) GetAlbumMedia(params storage.ListAlbumPhotosParams) (*sto
 	return s.repo.ListAlbumPhotos(params)
 }
 
+// GetAlbum 获取单个相册。
+func (s *PhotoService) GetAlbum(id int64, userID int64) (*storage.Album, error) {
+	return s.repo.GetAlbumByID(id, userID)
+}
+
 // AddPhoto 将媒体添加到相册。
 func (s *PhotoService) AddPhoto(albumID int64, photoID int64, userID int64) error {
 	return s.repo.AddPhotoToAlbum(albumID, photoID, userID)

@@ -51,6 +51,26 @@ func (s *PhotoService) CreateAlbum(name, description string, userID int64) (*sto
 	return album, nil
 }
 
+// UpdateAlbum 更新相册。
+func (s *PhotoService) UpdateAlbum(id int64, name, description string, coverPhotoID *int64, userID int64) (*storage.Album, error) {
+	album, err := s.repo.GetAlbumByID(id, userID)
+	if err != nil {
+		return nil, err
+	}
+	if album == nil {
+		return nil, fmt.Errorf("相册不存在")
+	}
+	if name != "" {
+		album.Name = name
+	}
+	album.Description = description
+	album.CoverPhotoID = coverPhotoID
+	if err := s.repo.UpdateAlbum(album); err != nil {
+		return nil, err
+	}
+	return album, nil
+}
+
 // GetAlbumDownloadEntries 获取相册下载条目。
 func (s *PhotoService) GetAlbumDownloadEntries(albumID int64, userID int64) (string, []DownloadEntry, error) {
 	album, err := s.repo.GetAlbumByID(albumID, userID)

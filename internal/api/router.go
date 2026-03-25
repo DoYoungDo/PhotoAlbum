@@ -33,6 +33,7 @@ type videoRegistrar interface {
 	GetAlbumDownloadEntries(albumID int64, userID int64) (string, []service.DownloadEntry, error)
 	ListAlbums(userID int64) ([]*storage.Album, error)
 	RemovePhoto(albumID int64, photoID int64, userID int64) error
+	UpdateAlbum(id int64, name, description string, coverPhotoID *int64, userID int64) (*storage.Album, error)
 	RegisterUploadedVideo(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
 	DeletePhoto(id int64, userID int64) error
 	EmptyTrash(userID int64) error
@@ -59,8 +60,9 @@ type albumMediaRequest struct {
 }
 
 type albumRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name         string `json:"name"`
+	Description  string `json:"description"`
+	CoverPhotoID *int64 `json:"cover_photo_id"`
 }
 
 type contextKey string
@@ -91,6 +93,7 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 		media.GET("/albums/:id/download", authMiddleware(cfg), handleDownloadAlbumMedia(cfg, registrar))
 		media.GET("/albums/:id", authMiddleware(cfg), handleListAlbumMedia(cfg, registrar))
 		media.POST("/albums/:id", authMiddleware(cfg), handleAddMediaToAlbum(cfg, registrar))
+		media.PUT("/albums/:id", authMiddleware(cfg), handleUpdateAlbumMedia(cfg, registrar))
 		media.DELETE("/albums/:id/:mediaId", authMiddleware(cfg), handleRemoveMediaFromAlbum(cfg, registrar))
 		media.GET("", authMiddleware(cfg), handleListMedia(cfg, registrar))
 		media.GET("/trash", authMiddleware(cfg), handleListTrashMedia(cfg, registrar))
@@ -415,6 +418,36 @@ func handleCreateAlbumMedia(cfg *config.Config, registrar videoRegistrar) gin.Ha
 			return
 		}
 		c.JSON(http.StatusCreated, album)
+	}
+}
+
+func handleUpdateAlbumMedia(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		albumID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		if err != nil || albumID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "相册ID 无效"})
+			return
+		}
+		var req albumRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求体"})
+			return
+		}
+		album, err := registrar.UpdateAlbum(albumID, req.Name, req.Description, req.CoverPhotoID, userID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, album)
 	}
 }
 

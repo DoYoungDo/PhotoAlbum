@@ -125,7 +125,7 @@ func TestAuthMiddleware_RedirectsHTMLRequests(t *testing.T) {
 
 func TestAuthMiddleware_Returns401ForAPI(t *testing.T) {
 	s := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/photos", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/photos/upload", nil)
 	req.Header.Set("Accept", "application/json")
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
@@ -137,11 +137,11 @@ func TestAuthMiddleware_Returns401ForAPI(t *testing.T) {
 func TestAuthMiddleware_AllowsValidToken(t *testing.T) {
 	s := newTestServer(t)
 	newReq := withAuth(t, s)
-	req := newReq(http.MethodGet, "/api/photos", nil)
+	req := newReq(http.MethodPost, "/api/photos/upload", nil)
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("有效 token 期望 200，得到 %d", w.Code)
+	if w.Code == http.StatusUnauthorized {
+		t.Fatalf("有效 token 不应得到 401，得到 %d", w.Code)
 	}
 }
 
@@ -233,29 +233,6 @@ func TestStaticFile(t *testing.T) {
 	s.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("期望 200，得到 %d", w.Code)
-	}
-}
-
-// --- Photo API 测试 ---
-
-func TestListPhotos_AuthRequired(t *testing.T) {
-	s := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/photos", nil)
-	w := httptest.NewRecorder()
-	s.ServeHTTP(w, req)
-	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("期望 401，得到 %d", w.Code)
-	}
-}
-
-func TestListPhotos_Empty(t *testing.T) {
-	s := newTestServer(t)
-	newReq := withAuth(t, s)
-	req := newReq(http.MethodGet, "/api/photos", nil)
-	w := httptest.NewRecorder()
-	s.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("期望 200，得到 %d，body=%s", w.Code, w.Body.String())
 	}
 }
 

@@ -15,7 +15,6 @@ import (
 
 	"photoalbum/internal/config"
 	"photoalbum/internal/service"
-	"photoalbum/internal/storage"
 )
 
 // maxUploadSize 单次上传最大 100MB
@@ -70,23 +69,6 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   -1,
 	})
 	writeJSON(w, http.StatusOK, map[string]string{"message": "已退出登录"})
-}
-
-func (s *Server) handleListPhotos(w http.ResponseWriter, r *http.Request) {
-	userID := s.mustUserID(w, r)
-	if userID == 0 {
-		return
-	}
-	page, err := s.photoService.GetTimeline(storage.ListPhotosParams{
-		UserID: userID,
-		Cursor: r.URL.Query().Get("cursor"),
-		Limit:  30,
-	})
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, page)
 }
 
 func readUploadedFile(file multipart.File) ([]byte, error) {

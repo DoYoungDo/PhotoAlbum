@@ -88,17 +88,6 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("DELETE /api/trash/{id}", s.auth(s.handleHardDeleteTrashedPhoto))
 	s.mux.HandleFunc("DELETE /api/trash", s.auth(s.handleEmptyTrash))
 
-	// 相册 API
-	s.mux.HandleFunc("GET /api/albums", s.auth(s.handleListAlbums))
-	s.mux.HandleFunc("POST /api/albums", s.auth(s.handleCreateAlbum))
-	s.mux.HandleFunc("GET /api/albums/{id}", s.auth(s.handleGetAlbum))
-	s.mux.HandleFunc("GET /api/albums/{id}/download", s.auth(s.handleDownloadAlbum))
-	s.mux.HandleFunc("PUT /api/albums/{id}", s.auth(s.handleUpdateAlbum))
-	s.mux.HandleFunc("DELETE /api/albums/{id}", s.auth(s.handleDeleteAlbum))
-	s.mux.HandleFunc("GET /api/albums/{id}/photos", s.auth(s.handleListAlbumPhotos))
-	s.mux.HandleFunc("POST /api/albums/{id}/photos", s.auth(s.handleAddPhotoToAlbum))
-	s.mux.HandleFunc("DELETE /api/albums/{id}/photos/{photoId}", s.auth(s.handleRemovePhotoFromAlbum))
-
 }
 
 // writeJSON 写入 JSON 响应

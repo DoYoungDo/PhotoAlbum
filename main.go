@@ -49,9 +49,7 @@ func main() {
 	defer repo.Close()
 
 	photoService := service.NewPhotoService(repo, cfg.StoragePath)
-	albumService := service.NewAlbumService(repo)
-	shareService := service.NewShareService(repo)
-	legacyApp := server.New(cfg, photoService, albumService, shareService, webFS)
+	legacyApp := server.New(cfg, photoService, webFS)
 	app := api.NewRouter(cfg, legacyApp, photoService)
 
 	addr := fmt.Sprintf(":%d", cfg.Port)

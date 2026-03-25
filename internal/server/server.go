@@ -13,8 +13,6 @@ import (
 type Server struct {
 	cfg          *config.Config
 	photoService *service.PhotoService
-	albumService *service.AlbumService
-	shareService *service.ShareService
 	mux          *http.ServeMux
 	staticFS     fs.FS // embed 或本地文件系统
 }
@@ -23,15 +21,11 @@ type Server struct {
 func New(
 	cfg *config.Config,
 	photoService *service.PhotoService,
-	albumService *service.AlbumService,
-	shareService *service.ShareService,
 	staticFS fs.FS,
 ) *Server {
 	s := &Server{
 		cfg:          cfg,
 		photoService: photoService,
-		albumService: albumService,
-		shareService: shareService,
 		staticFS:     staticFS,
 		mux:          http.NewServeMux(),
 	}

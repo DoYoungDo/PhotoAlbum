@@ -45,9 +45,7 @@ func newTestServer(t *testing.T) *Server {
 	}
 
 	photoSvc := service.NewPhotoService(repo, dir)
-	albumSvc := service.NewAlbumService(repo)
-	shareSvc := service.NewShareService(repo)
-	return New(cfg, photoSvc, albumSvc, shareSvc, nil) // nil FS：测试中回退到本地文件系统
+	return New(cfg, photoSvc, nil) // nil FS：测试中回退到本地文件系统
 }
 
 // withAuth 生成带有认证 cookie 的请求构造函数

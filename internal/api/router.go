@@ -111,6 +111,11 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 
+	r.GET("/", pageAuthMiddleware(cfg), handleAppPage())
+	r.GET("/albums", pageAuthMiddleware(cfg), handleAppPage())
+	r.GET("/albums/:id", pageAuthMiddleware(cfg), handleAppPage())
+	r.GET("/trash", pageAuthMiddleware(cfg), handleAppPage())
+	r.GET("/login", handleLoginPage())
 	r.POST("/api/auth/login", handleLogin(cfg))
 	r.POST("/api/auth/logout", handleLogout())
 
@@ -1148,6 +1153,25 @@ func authMiddleware(cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
+		c.Set(string(userContextKey), username)
+		c.Next()
+	}
+}
+
+func pageAuthMiddleware(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		cookie, err := c.Cookie(authCookieName)
+		if err != nil {
+			c.Redirect(http.StatusSeeOther, "/login")
+			c.Abort()
+			return
+		}
+		username, err := parseToken(cfg.JWTSecret, cookie)
+		if err != nil || !usernameExists(cfg.Users, username) {
+			c.Redirect(http.StatusSeeOther, "/login")
+			c.Abort()
+			return
+		}
 		c.Set(string(userContextKey), username)
 		c.Next()
 	}

@@ -1956,14 +1956,14 @@ func TestDownloadMediaBatch_AcceptsLegacyPhotoIDs(t *testing.T) {
 
 func TestNewRouter_FallsBackToLegacyHandler(t *testing.T) {
 	legacy := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/login" {
-			t.Fatalf("期望回退到 /login，得到 %s", r.URL.Path)
+		if r.URL.Path != "/unknown" {
+			t.Fatalf("期望回退到 /unknown，得到 %s", r.URL.Path)
 		}
 		w.WriteHeader(http.StatusTeapot)
 	})
 
 	router := NewRouter(testConfig(), legacy, okRegistrar())
-	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	req := httptest.NewRequest(http.MethodGet, "/unknown", nil)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
@@ -2011,6 +2011,43 @@ func TestLogin_WrongPassword(t *testing.T) {
 func TestLogout_ClearsCookie(t *testing.T) {
 	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+}
+
+func TestLoginPage_Returns200(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+}
+
+func TestAppPage_RequiresAuth(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("期望 303，得到 %d", w.Code)
+	}
+}
+
+func TestAppPage_WithAuthReturns200(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/albums/1", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)

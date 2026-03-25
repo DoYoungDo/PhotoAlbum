@@ -103,67 +103,7 @@ func TestParseToken_WrongSecret(t *testing.T) {
 	}
 }
 
-// --- Auth 中间件测试 ---
-
-func TestAuthMiddleware_RedirectsHTMLRequests(t *testing.T) {
-	s := newTestServer(t)
-	// 页面路径（非 /api/）未登录应该跳转到 /login
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	w := httptest.NewRecorder()
-	s.ServeHTTP(w, req)
-	if w.Code != http.StatusSeeOther {
-		t.Fatalf("期望 303，得到 %d", w.Code)
-	}
-	if loc := w.Header().Get("Location"); loc != "/login" {
-		t.Fatalf("期望跳转到 /login，得到 %s", loc)
-	}
-}
-
-func TestAuthMiddleware_Returns401ForAPI(t *testing.T) {
-	s := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/api/anything-missing", nil)
-	req.Header.Set("Accept", "application/json")
-	w := httptest.NewRecorder()
-	s.ServeHTTP(w, req)
-	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("期望 401，得到 %d", w.Code)
-	}
-}
-
-func TestAuthMiddleware_AllowsValidToken(t *testing.T) {
-	s := newTestServer(t)
-	newReq := withAuth(t, s)
-	req := newReq(http.MethodGet, "/", nil)
-	w := httptest.NewRecorder()
-	s.ServeHTTP(w, req)
-	if w.Code == http.StatusUnauthorized {
-		t.Fatalf("有效 token 不应得到 401，得到 %d", w.Code)
-	}
-}
-
 // --- 页面测试 ---
-
-func TestLoginPage_Returns200(t *testing.T) {
-	s := newTestServer(t)
-	req := httptest.NewRequest(http.MethodGet, "/login", nil)
-	w := httptest.NewRecorder()
-	s.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("期望 200，得到 %d", w.Code)
-	}
-}
-
-func TestIndexPage_WithAuth(t *testing.T) {
-	s := newTestServer(t)
-	newReq := withAuth(t, s)
-	req := newReq(http.MethodGet, "/", nil)
-	req.Header.Set("Accept", "text/html")
-	w := httptest.NewRecorder()
-	s.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("期望 200，得到 %d", w.Code)
-	}
-}
 
 func TestStaticFile(t *testing.T) {
 	if _, err := os.Stat(filepath.Join("web", "static", "app.css")); err != nil {

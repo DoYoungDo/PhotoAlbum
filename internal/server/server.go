@@ -59,15 +59,6 @@ func (s *Server) registerRoutes() {
 	}
 	s.mux.Handle("GET /static/", http.StripPrefix("/static/", staticHandler))
 
-	// 页面路由（返回 HTML，需要登录）
-	s.mux.HandleFunc("GET /", s.auth(s.handleIndex))
-	s.mux.HandleFunc("GET /albums", s.auth(s.handleAlbumsPage))
-	s.mux.HandleFunc("GET /albums/{id}", s.auth(s.handleAlbumDetailPage))
-	s.mux.HandleFunc("GET /trash", s.auth(s.handleTrashPage))
-
-	// 登录/登出
-	s.mux.HandleFunc("GET /login", s.handleLoginPage)
-
 }
 
 // writeJSON 写入 JSON 响应

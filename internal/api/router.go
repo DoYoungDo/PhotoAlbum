@@ -102,15 +102,12 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
-// NewRouter 创建新的 Gin 路由入口。
-//
-// 当前阶段仅为后续媒体能力预留 Gin 路由组，
-// 其余现有功能继续回退到 legacy handler。
-func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar) http.Handler {
-	return NewRouterWithStatic(cfg, legacy, nil, registrar)
+// NewRouter 创建 Gin HTTP 入口。
+func NewRouter(cfg *config.Config, registrar videoRegistrar) http.Handler {
+	return NewRouterWithStatic(cfg, nil, registrar)
 }
 
-func NewRouterWithStatic(cfg *config.Config, legacy http.Handler, staticFS fs.FS, registrar videoRegistrar) http.Handler {
+func NewRouterWithStatic(cfg *config.Config, staticFS fs.FS, registrar videoRegistrar) http.Handler {
 	gin.SetMode(gin.ReleaseMode)
 
 	r := gin.New()
@@ -162,9 +159,12 @@ func NewRouterWithStatic(cfg *config.Config, legacy http.Handler, staticFS fs.FS
 	r.GET("/s/:token/download", handleDownloadSharedMedia(cfg, registrar))
 	r.GET("/s/:token", handleSharePage())
 
-	legacyHandler := gin.WrapH(legacy)
-	r.NoRoute(legacyHandler)
-	r.NoMethod(legacyHandler)
+	r.NoRoute(func(c *gin.Context) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "接口不存在"})
+	})
+	r.NoMethod(func(c *gin.Context) {
+		c.JSON(http.StatusMethodNotAllowed, gin.H{"error": "不支持的请求方法"})
+	})
 
 	return r
 }

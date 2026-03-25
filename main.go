@@ -48,7 +48,7 @@ func main() {
 	defer repo.Close()
 
 	photoService := service.NewPhotoService(repo, cfg.StoragePath)
-	app := api.NewRouterWithStatic(cfg, http.NotFoundHandler(), webFS, photoService)
+	app := api.NewRouterWithStatic(cfg, webFS, photoService)
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	if host := preferredLANIP(); host != "" {

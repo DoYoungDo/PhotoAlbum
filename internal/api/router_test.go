@@ -372,11 +372,7 @@ func mp4Sample() []byte {
 }
 
 func TestNewRouter_MediaPlaceholder(t *testing.T) {
-	legacy := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	router := NewRouter(testConfig(), legacy, okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media", nil)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
 	w := httptest.NewRecorder()
@@ -404,7 +400,7 @@ func TestNewRouter_MediaPlaceholder(t *testing.T) {
 }
 
 func TestMediaList_RequiresAuth(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media", nil)
 	w := httptest.NewRecorder()
 
@@ -416,7 +412,7 @@ func TestMediaList_RequiresAuth(t *testing.T) {
 }
 
 func TestGetMedia_RequiresAuth(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media/1", nil)
 	w := httptest.NewRecorder()
 
@@ -428,7 +424,7 @@ func TestGetMedia_RequiresAuth(t *testing.T) {
 }
 
 func TestGetMedia_InvalidID(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media/abc", nil)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
 	w := httptest.NewRecorder()
@@ -441,7 +437,7 @@ func TestGetMedia_InvalidID(t *testing.T) {
 }
 
 func TestGetMedia_Success(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media/2", nil)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
 	w := httptest.NewRecorder()
@@ -468,7 +464,7 @@ func TestGetMedia_NotFound(t *testing.T) {
 	registrar.getPhoto = func(id int64, userID int64) (*storage.Photo, error) {
 		return nil, nil
 	}
-	router := NewRouter(testConfig(), http.NotFoundHandler(), registrar)
+	router := NewRouter(testConfig(), registrar)
 	req := httptest.NewRequest(http.MethodGet, "/api/media/99", nil)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
 	w := httptest.NewRecorder()
@@ -481,7 +477,7 @@ func TestGetMedia_NotFound(t *testing.T) {
 }
 
 func TestDeleteMedia_RequiresAuth(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodDelete, "/api/media/1", nil)
 	w := httptest.NewRecorder()
 
@@ -493,7 +489,7 @@ func TestDeleteMedia_RequiresAuth(t *testing.T) {
 }
 
 func TestDeleteMedia_InvalidID(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodDelete, "/api/media/abc", nil)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
 	w := httptest.NewRecorder()
@@ -507,7 +503,7 @@ func TestDeleteMedia_InvalidID(t *testing.T) {
 
 func TestDeleteMedia_Success(t *testing.T) {
 	called := false
-	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(testConfig(), stubRegistrar{
 		register:    okRegistrar().register,
 		deletePhoto: func(id int64, userID int64) error { called = true; return nil },
 		getPhoto:    okRegistrar().getPhoto,
@@ -540,7 +536,7 @@ func TestDeleteMedia_Success(t *testing.T) {
 }
 
 func TestDeleteMedia_ReturnsServiceError(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(testConfig(), stubRegistrar{
 		register:    okRegistrar().register,
 		deletePhoto: func(id int64, userID int64) error { return fmt.Errorf("照片/视频不存在") },
 		getPhoto:    okRegistrar().getPhoto,
@@ -561,7 +557,7 @@ func TestDeleteMedia_ReturnsServiceError(t *testing.T) {
 }
 
 func TestListAlbumMedia_RequiresAuth(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media/albums/1", nil)
 	w := httptest.NewRecorder()
 
@@ -573,7 +569,7 @@ func TestListAlbumMedia_RequiresAuth(t *testing.T) {
 }
 
 func TestGetAlbumDetail_RequiresAuth(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media/albums/1/detail", nil)
 	w := httptest.NewRecorder()
 
@@ -585,7 +581,7 @@ func TestGetAlbumDetail_RequiresAuth(t *testing.T) {
 }
 
 func TestGetAlbumDetail_InvalidAlbumID(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media/albums/abc/detail", nil)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
 	w := httptest.NewRecorder()
@@ -598,7 +594,7 @@ func TestGetAlbumDetail_InvalidAlbumID(t *testing.T) {
 }
 
 func TestGetAlbumDetail_Success(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media/albums/5/detail", nil)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
 	w := httptest.NewRecorder()
@@ -623,7 +619,7 @@ func TestGetAlbumDetail_Success(t *testing.T) {
 }
 
 func TestListAlbumsMedia_RequiresAuth(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media/albums", nil)
 	w := httptest.NewRecorder()
 
@@ -635,7 +631,7 @@ func TestListAlbumsMedia_RequiresAuth(t *testing.T) {
 }
 
 func TestListAlbumsMedia_Success(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media/albums", nil)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
 	w := httptest.NewRecorder()
@@ -662,7 +658,7 @@ func TestListAlbumsMedia_Success(t *testing.T) {
 }
 
 func TestCreateAlbumMedia_RequiresAuth(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodPost, "/api/media/albums", strings.NewReader(`{"name":"旅行"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -676,7 +672,7 @@ func TestCreateAlbumMedia_RequiresAuth(t *testing.T) {
 
 func TestCreateAlbumMedia_Success(t *testing.T) {
 	called := false
-	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(testConfig(), stubRegistrar{
 		addPhoto: func(albumID int64, photoID int64, userID int64) error { return nil },
 		createAlbum: func(name, description string, userID int64) (*storage.Album, error) {
 			called = true
@@ -729,7 +725,7 @@ func TestCreateAlbumMedia_Success(t *testing.T) {
 }
 
 func TestUpdateAlbumMedia_RequiresAuth(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodPut, "/api/media/albums/8", strings.NewReader(`{"name":"旅行 2"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -744,7 +740,7 @@ func TestUpdateAlbumMedia_RequiresAuth(t *testing.T) {
 func TestUpdateAlbumMedia_Success(t *testing.T) {
 	called := false
 	var gotCoverID *int64
-	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(testConfig(), stubRegistrar{
 		addPhoto:                func(albumID int64, photoID int64, userID int64) error { return nil },
 		createAlbum:             okRegistrar().createAlbum,
 		getAlbum:                okRegistrar().getAlbum,
@@ -799,7 +795,7 @@ func TestUpdateAlbumMedia_Success(t *testing.T) {
 }
 
 func TestDeleteAlbumMedia_RequiresAuth(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodDelete, "/api/media/albums/8", nil)
 	w := httptest.NewRecorder()
 
@@ -812,7 +808,7 @@ func TestDeleteAlbumMedia_RequiresAuth(t *testing.T) {
 
 func TestDeleteAlbumMedia_Success(t *testing.T) {
 	called := false
-	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(testConfig(), stubRegistrar{
 		addPhoto:                func(albumID int64, photoID int64, userID int64) error { return nil },
 		createAlbum:             okRegistrar().createAlbum,
 		deleteAlbum:             func(id int64, userID int64) error { called = true; return nil },
@@ -859,7 +855,7 @@ func TestDeleteAlbumMedia_Success(t *testing.T) {
 }
 
 func TestListSharesMedia_RequiresAuth(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media/shares", nil)
 	w := httptest.NewRecorder()
 
@@ -871,7 +867,7 @@ func TestListSharesMedia_RequiresAuth(t *testing.T) {
 }
 
 func TestListSharesMedia_Success(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media/shares", nil)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
 	w := httptest.NewRecorder()
@@ -898,7 +894,7 @@ func TestListSharesMedia_Success(t *testing.T) {
 }
 
 func TestCreateShareMedia_RequiresAuth(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodPost, "/api/media/shares", strings.NewReader(`{"type":"photo","target_id":11}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -913,7 +909,7 @@ func TestCreateShareMedia_RequiresAuth(t *testing.T) {
 func TestCreateShareMedia_Success(t *testing.T) {
 	called := false
 	var gotInput service.CreateShareInput
-	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(testConfig(), stubRegistrar{
 		addPhoto:    okRegistrar().addPhoto,
 		createAlbum: okRegistrar().createAlbum,
 		createShare: func(input service.CreateShareInput) (*storage.ShareLink, error) {
@@ -971,7 +967,7 @@ func TestCreateShareMedia_Success(t *testing.T) {
 }
 
 func TestDeleteShareMedia_RequiresAuth(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodDelete, "/api/media/shares/3", nil)
 	w := httptest.NewRecorder()
 
@@ -984,7 +980,7 @@ func TestDeleteShareMedia_RequiresAuth(t *testing.T) {
 
 func TestDeleteShareMedia_Success(t *testing.T) {
 	called := false
-	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(testConfig(), stubRegistrar{
 		addPhoto:                okRegistrar().addPhoto,
 		createAlbum:             okRegistrar().createAlbum,
 		createShare:             okRegistrar().createShare,
@@ -1034,7 +1030,7 @@ func TestDeleteShareMedia_Success(t *testing.T) {
 }
 
 func TestGetShareByToken_NotFound(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/s/missing", nil)
 	w := httptest.NewRecorder()
 
@@ -1046,7 +1042,7 @@ func TestGetShareByToken_NotFound(t *testing.T) {
 }
 
 func TestGetShareByToken_Success(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/s/token-1", nil)
 	w := httptest.NewRecorder()
 
@@ -1073,7 +1069,7 @@ func TestGetShareByToken_Success(t *testing.T) {
 }
 
 func TestGetSharedAlbumMedia_NotFound(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/s/missing/photos", nil)
 	w := httptest.NewRecorder()
 
@@ -1085,7 +1081,7 @@ func TestGetSharedAlbumMedia_NotFound(t *testing.T) {
 }
 
 func TestGetSharedAlbumMedia_BadType(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/s/token-1/photos", nil)
 	w := httptest.NewRecorder()
 
@@ -1097,7 +1093,7 @@ func TestGetSharedAlbumMedia_BadType(t *testing.T) {
 }
 
 func TestGetSharedAlbumMedia_Success(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(testConfig(), stubRegistrar{
 		addPhoto:                okRegistrar().addPhoto,
 		createAlbum:             okRegistrar().createAlbum,
 		createShare:             okRegistrar().createShare,
@@ -1156,7 +1152,7 @@ func TestServePhotoFile_Success(t *testing.T) {
 	if err := os.WriteFile(mediaFile, []byte("image-data"), 0644); err != nil {
 		t.Fatalf("创建测试原图失败: %v", err)
 	}
-	router := NewRouter(cfg, http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(cfg, stubRegistrar{
 		addPhoto:                okRegistrar().addPhoto,
 		createAlbum:             okRegistrar().createAlbum,
 		createShare:             okRegistrar().createShare,
@@ -1207,7 +1203,7 @@ func TestServeThumbnailFile_Success(t *testing.T) {
 	if err := os.WriteFile(thumbFile, []byte("thumb-data"), 0644); err != nil {
 		t.Fatalf("创建测试缩略图失败: %v", err)
 	}
-	router := NewRouter(cfg, http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(cfg, stubRegistrar{
 		addPhoto:                okRegistrar().addPhoto,
 		createAlbum:             okRegistrar().createAlbum,
 		createShare:             okRegistrar().createShare,
@@ -1254,7 +1250,7 @@ func TestServeSharedMediaFile_AlbumSuccess(t *testing.T) {
 	if err := os.WriteFile(mediaFile, []byte("album-media"), 0644); err != nil {
 		t.Fatalf("创建测试分享媒体失败: %v", err)
 	}
-	router := NewRouter(cfg, http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(cfg, stubRegistrar{
 		addPhoto:                okRegistrar().addPhoto,
 		createAlbum:             okRegistrar().createAlbum,
 		createShare:             okRegistrar().createShare,
@@ -1302,7 +1298,7 @@ func TestDownloadSharedMedia_Success(t *testing.T) {
 	if err := os.WriteFile(mediaFile, []byte("shared-media"), 0644); err != nil {
 		t.Fatalf("创建测试分享下载文件失败: %v", err)
 	}
-	router := NewRouter(cfg, http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(cfg, stubRegistrar{
 		addPhoto:                okRegistrar().addPhoto,
 		createAlbum:             okRegistrar().createAlbum,
 		createShare:             okRegistrar().createShare,
@@ -1346,7 +1342,7 @@ func TestDownloadSharedMedia_Success(t *testing.T) {
 }
 
 func TestHandleSharePage_Success(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/s/token-1", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -1362,7 +1358,7 @@ func TestHandleSharePage_Success(t *testing.T) {
 }
 
 func TestDownloadAlbumMedia_RequiresAuth(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media/albums/1/download", nil)
 	w := httptest.NewRecorder()
 
@@ -1381,7 +1377,7 @@ func TestDownloadAlbumMedia_Success(t *testing.T) {
 	if err := os.WriteFile(mediaFile, []byte("album-video"), 0644); err != nil {
 		t.Fatalf("创建测试相册媒体文件失败: %v", err)
 	}
-	router := NewRouter(cfg, http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(cfg, stubRegistrar{
 		addPhoto: func(albumID int64, photoID int64, userID int64) error { return nil },
 		getAlbum: okRegistrar().getAlbum,
 		getAlbumDownloadEntries: func(albumID int64, userID int64) (string, []service.DownloadEntry, error) {
@@ -1429,7 +1425,7 @@ func TestDownloadAlbumMedia_Success(t *testing.T) {
 }
 
 func TestListAlbumMedia_InvalidAlbumID(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media/albums/abc", nil)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
 	w := httptest.NewRecorder()
@@ -1442,7 +1438,7 @@ func TestListAlbumMedia_InvalidAlbumID(t *testing.T) {
 }
 
 func TestListAlbumMedia_Success(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media/albums/5", nil)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
 	w := httptest.NewRecorder()
@@ -1470,7 +1466,7 @@ func TestListAlbumMedia_Success(t *testing.T) {
 }
 
 func TestAddMediaToAlbum_RequiresAuth(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodPost, "/api/media/albums/1", strings.NewReader(`{"media_id":9}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -1485,7 +1481,7 @@ func TestAddMediaToAlbum_RequiresAuth(t *testing.T) {
 func TestAddMediaToAlbum_UsesMediaID(t *testing.T) {
 	called := false
 	var gotAlbumID, gotMediaID int64
-	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(testConfig(), stubRegistrar{
 		addPhoto: func(albumID int64, photoID int64, userID int64) error {
 			called = true
 			gotAlbumID = albumID
@@ -1526,7 +1522,7 @@ func TestAddMediaToAlbum_UsesMediaID(t *testing.T) {
 
 func TestAddMediaToAlbum_AcceptsLegacyPhotoID(t *testing.T) {
 	called := false
-	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(testConfig(), stubRegistrar{
 		addPhoto: func(albumID int64, photoID int64, userID int64) error {
 			called = true
 			if albumID != 3 || photoID != 7 {
@@ -1564,7 +1560,7 @@ func TestAddMediaToAlbum_AcceptsLegacyPhotoID(t *testing.T) {
 }
 
 func TestRemoveMediaFromAlbum_RequiresAuth(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodDelete, "/api/media/albums/1/9", nil)
 	w := httptest.NewRecorder()
 
@@ -1576,7 +1572,7 @@ func TestRemoveMediaFromAlbum_RequiresAuth(t *testing.T) {
 }
 
 func TestRemoveMediaFromAlbum_InvalidMediaID(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodDelete, "/api/media/albums/1/abc", nil)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
 	w := httptest.NewRecorder()
@@ -1591,7 +1587,7 @@ func TestRemoveMediaFromAlbum_InvalidMediaID(t *testing.T) {
 func TestRemoveMediaFromAlbum_Success(t *testing.T) {
 	called := false
 	var gotAlbumID, gotMediaID int64
-	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(testConfig(), stubRegistrar{
 		addPhoto: func(albumID int64, photoID int64, userID int64) error {
 			return nil
 		},
@@ -1633,7 +1629,7 @@ func TestRemoveMediaFromAlbum_Success(t *testing.T) {
 }
 
 func TestListTrashMedia_RequiresAuth(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media/trash", nil)
 	w := httptest.NewRecorder()
 
@@ -1645,7 +1641,7 @@ func TestListTrashMedia_RequiresAuth(t *testing.T) {
 }
 
 func TestListTrashMedia_Success(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media/trash", nil)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
 	w := httptest.NewRecorder()
@@ -1670,7 +1666,7 @@ func TestListTrashMedia_Success(t *testing.T) {
 
 func TestRestoreMedia_Success(t *testing.T) {
 	called := false
-	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(testConfig(), stubRegistrar{
 		register:               okRegistrar().register,
 		deletePhoto:            okRegistrar().deletePhoto,
 		emptyTrash:             okRegistrar().emptyTrash,
@@ -1701,7 +1697,7 @@ func TestRestoreMedia_Success(t *testing.T) {
 
 func TestHardDeleteMedia_Success(t *testing.T) {
 	called := false
-	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(testConfig(), stubRegistrar{
 		register:               okRegistrar().register,
 		deletePhoto:            okRegistrar().deletePhoto,
 		emptyTrash:             okRegistrar().emptyTrash,
@@ -1731,7 +1727,7 @@ func TestHardDeleteMedia_Success(t *testing.T) {
 
 func TestEmptyTrashMedia_Success(t *testing.T) {
 	called := false
-	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(testConfig(), stubRegistrar{
 		register:               okRegistrar().register,
 		deletePhoto:            okRegistrar().deletePhoto,
 		emptyTrash:             func(userID int64) error { called = true; return nil },
@@ -1760,7 +1756,7 @@ func TestEmptyTrashMedia_Success(t *testing.T) {
 }
 
 func TestDownloadMedia_RequiresAuth(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media/1/download", nil)
 	w := httptest.NewRecorder()
 
@@ -1772,7 +1768,7 @@ func TestDownloadMedia_RequiresAuth(t *testing.T) {
 }
 
 func TestDownloadMedia_InvalidID(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media/abc/download", nil)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
 	w := httptest.NewRecorder()
@@ -1792,7 +1788,7 @@ func TestDownloadMedia_Success(t *testing.T) {
 	if err := os.WriteFile(mediaFile, []byte("video-download"), 0644); err != nil {
 		t.Fatalf("创建测试媒体文件失败: %v", err)
 	}
-	router := NewRouter(cfg, http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(cfg, stubRegistrar{
 		register: okRegistrar().register,
 		getPhoto: func(id int64, userID int64) (*storage.Photo, error) {
 			return &storage.Photo{ID: id, UUID: "media-2", OriginalName: "demo video.mp4", MediaKind: storage.MediaKindVideo, MimeType: "video/mp4", UploadedBy: userID}, nil
@@ -1828,7 +1824,7 @@ func TestDownloadMedia_NotFound(t *testing.T) {
 	registrar.getPhoto = func(id int64, userID int64) (*storage.Photo, error) {
 		return nil, nil
 	}
-	router := NewRouter(testConfig(), http.NotFoundHandler(), registrar)
+	router := NewRouter(testConfig(), registrar)
 	req := httptest.NewRequest(http.MethodGet, "/api/media/99/download", nil)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
 	w := httptest.NewRecorder()
@@ -1841,7 +1837,7 @@ func TestDownloadMedia_NotFound(t *testing.T) {
 }
 
 func TestDownloadMediaBatch_RequiresAuth(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodPost, "/api/media/download", strings.NewReader(`{"media_ids":[1]}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -1867,7 +1863,7 @@ func TestDownloadMediaBatch_UsesMediaIDsAndReturnsZip(t *testing.T) {
 	}
 
 	var gotIDs []int64
-	router := NewRouter(cfg, http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(cfg, stubRegistrar{
 		register:    okRegistrar().register,
 		deletePhoto: okRegistrar().deletePhoto,
 		getDownloadEntries: func(photoIDs []int64, userID int64) ([]service.DownloadEntry, error) {
@@ -1924,7 +1920,7 @@ func TestDownloadMediaBatch_UsesMediaIDsAndReturnsZip(t *testing.T) {
 
 func TestDownloadMediaBatch_AcceptsLegacyPhotoIDs(t *testing.T) {
 	called := false
-	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(testConfig(), stubRegistrar{
 		register:    okRegistrar().register,
 		deletePhoto: okRegistrar().deletePhoto,
 		getDownloadEntries: func(photoIDs []int64, userID int64) ([]service.DownloadEntry, error) {
@@ -1955,28 +1951,21 @@ func TestDownloadMediaBatch_AcceptsLegacyPhotoIDs(t *testing.T) {
 	}
 }
 
-func TestNewRouter_FallsBackToLegacyHandler(t *testing.T) {
-	legacy := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/unknown" {
-			t.Fatalf("期望回退到 /unknown，得到 %s", r.URL.Path)
-		}
-		w.WriteHeader(http.StatusTeapot)
-	})
-
-	router := NewRouter(testConfig(), legacy, okRegistrar())
+func TestNewRouter_UnknownRouteReturns404(t *testing.T) {
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/unknown", nil)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusTeapot {
-		t.Fatalf("期望 418，得到 %d", w.Code)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("期望 404，得到 %d", w.Code)
 	}
 }
 
 func TestNewRouterWithStatic_ServesLocalStaticFile(t *testing.T) {
 	staticFS := fstest.MapFS{"web/static/app.css": {Data: []byte(":root{--bg:#fff;}")}}
-	router := NewRouterWithStatic(testConfig(), http.NotFoundHandler(), staticFS, okRegistrar())
+	router := NewRouterWithStatic(testConfig(), staticFS, okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/static/app.css", nil)
 	w := httptest.NewRecorder()
 
@@ -1991,7 +1980,7 @@ func TestNewRouterWithStatic_ServesLocalStaticFile(t *testing.T) {
 }
 
 func TestLogin_Success(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"username":"alice","password":"password123"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -2013,7 +2002,7 @@ func TestLogin_Success(t *testing.T) {
 }
 
 func TestLogin_WrongPassword(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"username":"alice","password":"wrongpass"}`))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -2026,7 +2015,7 @@ func TestLogin_WrongPassword(t *testing.T) {
 }
 
 func TestLogout_ClearsCookie(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
 	w := httptest.NewRecorder()
 
@@ -2038,7 +2027,7 @@ func TestLogout_ClearsCookie(t *testing.T) {
 }
 
 func TestLoginPage_Returns200(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/login", nil)
 	w := httptest.NewRecorder()
 
@@ -2050,7 +2039,7 @@ func TestLoginPage_Returns200(t *testing.T) {
 }
 
 func TestAppPage_RequiresAuth(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 
@@ -2062,7 +2051,7 @@ func TestAppPage_RequiresAuth(t *testing.T) {
 }
 
 func TestAppPage_WithAuthReturns200(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/albums/1", nil)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
 	w := httptest.NewRecorder()
@@ -2075,7 +2064,7 @@ func TestAppPage_WithAuthReturns200(t *testing.T) {
 }
 
 func TestUploadPlaceholder_RequiresAuth(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := uploadRequest(t, "/api/media/upload", "demo.mp4", mp4Sample(), true)
 	w := httptest.NewRecorder()
 
@@ -2088,7 +2077,7 @@ func TestUploadPlaceholder_RequiresAuth(t *testing.T) {
 
 func TestUploadPlaceholder_RequiresMediaField(t *testing.T) {
 	cfg := testConfig()
-	router := NewRouter(cfg, http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(cfg, okRegistrar())
 	req := uploadRequest(t, "/api/media/upload", "", nil, false)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, cfg.JWTSecret, "alice")})
 	w := httptest.NewRecorder()
@@ -2103,7 +2092,7 @@ func TestUploadPlaceholder_RequiresMediaField(t *testing.T) {
 func TestUploadPlaceholder_RejectsNonMP4Extension(t *testing.T) {
 	cfg := testConfig()
 	cfg.StoragePath = t.TempDir()
-	router := NewRouter(cfg, http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(cfg, okRegistrar())
 	req := uploadRequest(t, "/api/media/upload", "demo.mov", mp4Sample(), true)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, cfg.JWTSecret, "alice")})
 	w := httptest.NewRecorder()
@@ -2118,7 +2107,7 @@ func TestUploadPlaceholder_RejectsNonMP4Extension(t *testing.T) {
 func TestUploadPlaceholder_SavesFinalFileAndRecordAfterValidation(t *testing.T) {
 	cfg := testConfig()
 	cfg.StoragePath = t.TempDir()
-	router := NewRouter(cfg, http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(cfg, okRegistrar())
 	req := uploadRequest(t, "/api/media/upload", "demo.mp4", mp4Sample(), true)
 	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, cfg.JWTSecret, "alice")})
 	w := httptest.NewRecorder()
@@ -2189,7 +2178,7 @@ func TestUploadPlaceholder_SavesFinalFileAndRecordAfterValidation(t *testing.T) 
 func TestUploadPlaceholder_CleansFileWhenRegisterFails(t *testing.T) {
 	cfg := testConfig()
 	cfg.StoragePath = t.TempDir()
-	router := NewRouter(cfg, http.NotFoundHandler(), stubRegistrar{register: func(input service.RegisterUploadedVideoInput) (*storage.Photo, error) {
+	router := NewRouter(cfg, stubRegistrar{register: func(input service.RegisterUploadedVideoInput) (*storage.Photo, error) {
 		return nil, fmt.Errorf("保存视频记录失败")
 	}})
 	req := uploadRequest(t, "/api/media/upload", "demo.mp4", mp4Sample(), true)
@@ -2215,7 +2204,7 @@ func TestUploadPlaceholder_CleansFileWhenRegisterFails(t *testing.T) {
 func TestUploadPlaceholder_AcceptsPhotoFieldAndReturnsImageRecord(t *testing.T) {
 	cfg := testConfig()
 	cfg.StoragePath = t.TempDir()
-	router := NewRouter(cfg, http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(cfg, okRegistrar())
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	part, err := writer.CreateFormFile("photo", "demo.jpg")
@@ -2252,7 +2241,7 @@ func TestUploadPlaceholder_AcceptsPhotoFieldAndReturnsImageRecord(t *testing.T) 
 }
 
 func TestServeMediaFile_RequiresAuth(t *testing.T) {
-	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	router := NewRouter(testConfig(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/media/files/video-1", nil)
 	w := httptest.NewRecorder()
 
@@ -2271,7 +2260,7 @@ func TestServeMediaFile_Success(t *testing.T) {
 	if err := os.WriteFile(mediaFile, []byte("video"), 0644); err != nil {
 		t.Fatalf("创建测试视频失败: %v", err)
 	}
-	router := NewRouter(cfg, http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(cfg, stubRegistrar{
 		register: okRegistrar().register,
 		getByUUID: func(uuid string, userID int64) (*storage.Photo, error) {
 			return &storage.Photo{UUID: uuid, OriginalName: "demo.mp4", MediaKind: storage.MediaKindVideo, MimeType: "video/mp4", UploadedBy: userID}, nil
@@ -2304,7 +2293,7 @@ func TestServePoster_Success(t *testing.T) {
 	if err := os.WriteFile(posterFile, []byte("jpg"), 0644); err != nil {
 		t.Fatalf("创建测试 poster 失败: %v", err)
 	}
-	router := NewRouter(cfg, http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(cfg, stubRegistrar{
 		register: okRegistrar().register,
 		getByUUID: func(uuid string, userID int64) (*storage.Photo, error) {
 			return &storage.Photo{UUID: uuid, OriginalName: "demo.mp4", MediaKind: storage.MediaKindVideo, MimeType: "video/mp4", UploadedBy: userID}, nil
@@ -2330,7 +2319,7 @@ func TestServePoster_Returns404WhenMissing(t *testing.T) {
 	cfg := testConfig()
 	storageDir := t.TempDir()
 	cfg.StoragePath = storageDir
-	router := NewRouter(cfg, http.NotFoundHandler(), stubRegistrar{
+	router := NewRouter(cfg, stubRegistrar{
 		register: okRegistrar().register,
 		getByUUID: func(uuid string, userID int64) (*storage.Photo, error) {
 			return &storage.Photo{UUID: uuid, OriginalName: "demo.mp4", MediaKind: storage.MediaKindVideo, MimeType: "video/mp4", UploadedBy: userID}, nil

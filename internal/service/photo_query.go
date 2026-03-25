@@ -34,6 +34,11 @@ func (s *PhotoService) ListAlbums(userID int64) ([]*storage.Album, error) {
 	return s.repo.ListAlbums(userID)
 }
 
+// ListShares 获取用户所有分享链接。
+func (s *PhotoService) ListShares(userID int64) ([]*storage.ShareLink, error) {
+	return s.repo.ListShareLinks(userID)
+}
+
 // CreateAlbum 创建相册。
 func (s *PhotoService) CreateAlbum(name, description string, userID int64) (*storage.Album, error) {
 	if name == "" {

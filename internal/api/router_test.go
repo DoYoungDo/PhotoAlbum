@@ -29,6 +29,7 @@ type stubRegistrar struct {
 	getAlbum                func(id int64, userID int64) (*storage.Album, error)
 	getAlbumDownloadEntries func(albumID int64, userID int64) (string, []service.DownloadEntry, error)
 	listAlbums              func(userID int64) ([]*storage.Album, error)
+	listShares              func(userID int64) ([]*storage.ShareLink, error)
 	removePhoto             func(albumID int64, photoID int64, userID int64) error
 	updateAlbum             func(id int64, name, description string, coverPhotoID *int64, userID int64) (*storage.Album, error)
 	register                func(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
@@ -76,6 +77,10 @@ func (s stubRegistrar) GetAlbumDownloadEntries(albumID int64, userID int64) (str
 
 func (s stubRegistrar) ListAlbums(userID int64) ([]*storage.Album, error) {
 	return s.listAlbums(userID)
+}
+
+func (s stubRegistrar) ListShares(userID int64) ([]*storage.ShareLink, error) {
+	return s.listShares(userID)
 }
 
 func (s stubRegistrar) RemovePhoto(albumID int64, photoID int64, userID int64) error {
@@ -153,6 +158,11 @@ func okRegistrar() stubRegistrar {
 		return []*storage.Album{
 			{ID: 1, Name: "旅行", Description: "春游", CreatedBy: userID, CoverPhotoID: &coverID, PhotoCount: 2},
 			{ID: 2, Name: "收藏", Description: "混合媒体", CreatedBy: userID, PhotoCount: 5},
+		}, nil
+	}, listShares: func(userID int64) ([]*storage.ShareLink, error) {
+		return []*storage.ShareLink{
+			{ID: 1, Token: "token-1", Type: storage.ShareTypePhoto, TargetID: 11, CreatedBy: userID, CreatedAt: time.Now()},
+			{ID: 2, Token: "token-2", Type: storage.ShareTypeAlbum, TargetID: 8, CreatedBy: userID, CreatedAt: time.Now()},
 		}, nil
 	}, removePhoto: func(albumID int64, photoID int64, userID int64) error {
 		return nil
@@ -805,6 +815,45 @@ func TestDeleteAlbumMedia_Success(t *testing.T) {
 	}
 	if resp.Message != "相册已删除" {
 		t.Fatalf("删除相册响应不正确: %+v", resp)
+	}
+}
+
+func TestListSharesMedia_RequiresAuth(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/api/media/shares", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("期望 401，得到 %d", w.Code)
+	}
+}
+
+func TestListSharesMedia_Success(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/api/media/shares", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	var links []struct {
+		ID    int64  `json:"id"`
+		Type  string `json:"type"`
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &links); err != nil {
+		t.Fatalf("解析分享列表响应失败: %v", err)
+	}
+	if len(links) != 2 {
+		t.Fatalf("期望 2 条分享，得到 %d", len(links))
+	}
+	if links[0].Token != "token-1" || links[1].Type != storage.ShareTypeAlbum {
+		t.Fatalf("分享列表响应不正确: %+v", links)
 	}
 }
 

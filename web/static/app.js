@@ -164,7 +164,7 @@ const state = {
 // ── 分享状态加载 ─────────────────────────────────────
 async function loadShareMap() {
   try {
-    const links = await api.get('/api/shares');
+		const links = await api.get('/api/media/shares');
     state.shareMap = {};
     (links || []).forEach(l => {
       const key = `${l.type}:${l.target_id}`;

@@ -34,6 +34,7 @@ type videoRegistrar interface {
 	DeleteShare(id int64, userID int64) error
 	GetAlbum(id int64, userID int64) (*storage.Album, error)
 	GetAlbumDownloadEntries(albumID int64, userID int64) (string, []service.DownloadEntry, error)
+	GetShareByToken(token string) (*storage.ShareLink, error)
 	ListAlbums(userID int64) ([]*storage.Album, error)
 	ListShares(userID int64) ([]*storage.ShareLink, error)
 	RemovePhoto(albumID int64, photoID int64, userID int64) error
@@ -123,6 +124,7 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 
 	r.GET("/media/files/:uuid", authMiddleware(cfg), handleServeMediaFile(cfg, registrar))
 	r.GET("/media/posters/:uuid", authMiddleware(cfg), handleServePoster(cfg, registrar))
+	r.GET("/api/s/:token", handleGetShareByToken(cfg, registrar))
 
 	legacyHandler := gin.WrapH(legacy)
 	r.NoRoute(legacyHandler)
@@ -541,6 +543,25 @@ func handleCreateShareMedia(cfg *config.Config, registrar videoRegistrar) gin.Ha
 			return
 		}
 		c.JSON(http.StatusCreated, link)
+	}
+}
+
+func handleGetShareByToken(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		link, err := registrar.GetShareByToken(c.Param("token"))
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		if link == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "分享链接不存在或已过期"})
+			return
+		}
+		c.JSON(http.StatusOK, link)
 	}
 }
 

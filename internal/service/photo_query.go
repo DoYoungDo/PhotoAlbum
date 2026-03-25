@@ -39,6 +39,11 @@ func (s *PhotoService) ListShares(userID int64) ([]*storage.ShareLink, error) {
 	return s.repo.ListShareLinks(userID)
 }
 
+// GetShareByToken 通过 token 获取分享链接。
+func (s *PhotoService) GetShareByToken(token string) (*storage.ShareLink, error) {
+	return s.repo.GetShareLinkByToken(token)
+}
+
 // CreateShare 创建分享链接。
 func (s *PhotoService) CreateShare(input CreateShareInput) (*storage.ShareLink, error) {
 	if input.Type != storage.ShareTypePhoto && input.Type != storage.ShareTypeAlbum {

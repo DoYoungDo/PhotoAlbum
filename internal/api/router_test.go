@@ -30,6 +30,7 @@ type stubRegistrar struct {
 	deleteShare             func(id int64, userID int64) error
 	getAlbum                func(id int64, userID int64) (*storage.Album, error)
 	getAlbumDownloadEntries func(albumID int64, userID int64) (string, []service.DownloadEntry, error)
+	getShareByToken         func(token string) (*storage.ShareLink, error)
 	listAlbums              func(userID int64) ([]*storage.Album, error)
 	listShares              func(userID int64) ([]*storage.ShareLink, error)
 	removePhoto             func(albumID int64, photoID int64, userID int64) error
@@ -79,6 +80,10 @@ func (s stubRegistrar) UpdateAlbum(id int64, name, description string, coverPhot
 
 func (s stubRegistrar) GetAlbum(id int64, userID int64) (*storage.Album, error) {
 	return s.getAlbum(id, userID)
+}
+
+func (s stubRegistrar) GetShareByToken(token string) (*storage.ShareLink, error) {
+	return s.getShareByToken(token)
 }
 
 func (s stubRegistrar) GetAlbumDownloadEntries(albumID int64, userID int64) (string, []service.DownloadEntry, error) {
@@ -165,6 +170,11 @@ func okRegistrar() stubRegistrar {
 	}, getAlbum: func(id int64, userID int64) (*storage.Album, error) {
 		coverID := int64(12)
 		return &storage.Album{ID: id, Name: "旅行", Description: "相册描述", CreatedBy: userID, CoverPhotoID: &coverID, PhotoCount: 2}, nil
+	}, getShareByToken: func(token string) (*storage.ShareLink, error) {
+		if token == "missing" {
+			return nil, nil
+		}
+		return &storage.ShareLink{ID: 4, Token: token, Type: storage.ShareTypePhoto, TargetID: 11, CreatedBy: 1, CreatedAt: time.Now()}, nil
 	}, getAlbumDownloadEntries: func(albumID int64, userID int64) (string, []service.DownloadEntry, error) {
 		return "旅行", []service.DownloadEntry{{FileName: "album.mp4", Path: mediaFilePath(&storage.Photo{UUID: "media-1"}), MimeType: "video/mp4"}}, nil
 	}, listAlbums: func(userID int64) ([]*storage.Album, error) {
@@ -1004,6 +1014,40 @@ func TestDeleteShareMedia_Success(t *testing.T) {
 	}
 	if resp.Message != "分享链接已删除" {
 		t.Fatalf("删除分享响应不正确: %+v", resp)
+	}
+}
+
+func TestGetShareByToken_NotFound(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/api/s/missing", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("期望 404，得到 %d", w.Code)
+	}
+}
+
+func TestGetShareByToken_Success(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/api/s/token-1", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	var link struct {
+		Token string `json:"token"`
+		Type  string `json:"type"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &link); err != nil {
+		t.Fatalf("解析分享详情响应失败: %v", err)
+	}
+	if link.Token != "token-1" || link.Type != storage.ShareTypePhoto {
+		t.Fatalf("分享详情响应不正确: %+v", link)
 	}
 }
 

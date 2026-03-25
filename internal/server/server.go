@@ -70,9 +70,6 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/auth/login", s.handleLogin)
 	s.mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
 
-	// 图片 API
-	s.mux.HandleFunc("POST /api/photos/upload", s.auth(s.handleUploadPhoto))
-
 }
 
 // writeJSON 写入 JSON 响应

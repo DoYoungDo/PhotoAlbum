@@ -5,14 +5,11 @@ import (
 	"encoding/json"
 	"image"
 	"image/jpeg"
-	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
-	"time"
 
 	"photoalbum/internal/config"
 	"photoalbum/internal/service"
@@ -125,7 +122,7 @@ func TestAuthMiddleware_RedirectsHTMLRequests(t *testing.T) {
 
 func TestAuthMiddleware_Returns401ForAPI(t *testing.T) {
 	s := newTestServer(t)
-	req := httptest.NewRequest(http.MethodPost, "/api/photos/upload", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/anything-missing", nil)
 	req.Header.Set("Accept", "application/json")
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
@@ -137,7 +134,7 @@ func TestAuthMiddleware_Returns401ForAPI(t *testing.T) {
 func TestAuthMiddleware_AllowsValidToken(t *testing.T) {
 	s := newTestServer(t)
 	newReq := withAuth(t, s)
-	req := newReq(http.MethodPost, "/api/photos/upload", nil)
+	req := newReq(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, req)
 	if w.Code == http.StatusUnauthorized {
@@ -248,82 +245,6 @@ func TestParseClientLastModified(t *testing.T) {
 	if got.UnixMilli() != 1710403200000 {
 		t.Fatalf("期望 1710403200000，得到 %d", got.UnixMilli())
 	}
-}
-
-func TestHandleUploadPhoto_UsesClientLastModifiedFallback(t *testing.T) {
-	s := newTestServer(t)
-	newReq := withAuth(t, s)
-
-	var body bytes.Buffer
-	w := multipart.NewWriter(&body)
-	part, err := w.CreateFormFile("photo", "test.jpg")
-	if err != nil {
-		t.Fatalf("创建 multipart 失败: %v", err)
-	}
-	_, _ = part.Write(createTestJPEGBytes(100, 100))
-	clientMS := time.Date(2024, 3, 14, 12, 0, 0, 0, time.UTC).UnixMilli()
-	_ = w.WriteField("client_last_modified_ms", strconv.FormatInt(clientMS, 10))
-	_ = w.Close()
-
-	req := newReq(http.MethodPost, "/api/photos/upload", body.Bytes())
-	req.Header.Set("Content-Type", w.FormDataContentType())
-	rec := httptest.NewRecorder()
-	s.ServeHTTP(rec, req)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("期望 201，得到 %d，body=%s", rec.Code, rec.Body.String())
-	}
-
-	// 读取返回的图片对象，验证 taken_at 使用了客户端时间
-	var photo struct {
-		TakenAt string `json:"taken_at"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &photo); err != nil {
-		t.Fatalf("解析响应失败: %v", err)
-	}
-	parsed, err := time.Parse(time.RFC3339Nano, photo.TakenAt)
-	if err != nil {
-		t.Fatalf("解析 taken_at 失败: %v", err)
-	}
-	if parsed.UnixMilli() != clientMS {
-		t.Fatalf("期望 taken_at=%d，得到 %d", clientMS, parsed.UnixMilli())
-	}
-
-	// 上传后缩略图在后台 goroutine 生成，稍等片刻避免 TempDir 清理与后台写入竞争。
-	time.Sleep(50 * time.Millisecond)
-}
-
-func TestDownloadPhoto_Success(t *testing.T) {
-	s := newTestServer(t)
-	newReq := withAuth(t, s)
-
-	// 先上传一张图片
-	var body bytes.Buffer
-	mw := multipart.NewWriter(&body)
-	part, err := mw.CreateFormFile("photo", "下载测试.jpg")
-	if err != nil {
-		t.Fatalf("创建 multipart 失败: %v", err)
-	}
-	imgBytes := createTestJPEGBytes(64, 64)
-	_, _ = part.Write(imgBytes)
-	_ = mw.WriteField("client_last_modified_ms", strconv.FormatInt(time.Now().UnixMilli(), 10))
-	_ = mw.Close()
-
-	uploadReq := newReq(http.MethodPost, "/api/photos/upload", body.Bytes())
-	uploadReq.Header.Set("Content-Type", mw.FormDataContentType())
-	uploadRec := httptest.NewRecorder()
-	s.ServeHTTP(uploadRec, uploadReq)
-	if uploadRec.Code != http.StatusCreated {
-		t.Fatalf("上传期望 201，得到 %d，body=%s", uploadRec.Code, uploadRec.Body.String())
-	}
-
-	var photo struct {
-		ID int64 `json:"id"`
-	}
-	if err := json.Unmarshal(uploadRec.Body.Bytes(), &photo); err != nil {
-		t.Fatalf("解析上传响应失败: %v", err)
-	}
-
-	time.Sleep(50 * time.Millisecond)
 }
 
 func containsString(items []string, target string) bool {

@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,7 +13,6 @@ import (
 	"time"
 
 	"photoalbum/internal/config"
-	"photoalbum/internal/service"
 )
 
 // maxUploadSize 单次上传最大 100MB
@@ -86,49 +84,6 @@ func parseClientLastModified(r *http.Request) time.Time {
 		return time.Time{}
 	}
 	return time.UnixMilli(ms)
-}
-
-func (s *Server) handleUploadPhoto(w http.ResponseWriter, r *http.Request) {
-	userID := s.mustUserID(w, r)
-	if userID == 0 {
-		return
-	}
-
-	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		writeError(w, http.StatusRequestEntityTooLarge, "文件过大，最大支持 100MB")
-		return
-	}
-
-	file, header, err := r.FormFile("photo")
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "缺少照片文件字段")
-		return
-	}
-	data, err := readUploadedFile(file)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "读取文件失败")
-		return
-	}
-
-	result, err := s.photoService.Upload(service.UploadInput{
-		Reader:       bytes.NewReader(data),
-		OriginalName: header.Filename,
-		Size:         int64(len(data)),
-		UploadedBy:   userID,
-		FileModTime: func() time.Time {
-			if t := parseClientLastModified(r); !t.IsZero() {
-				return t
-			}
-			return time.Now()
-		}(),
-	})
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusCreated, result.Photo)
 }
 
 func contentDispositionAttachment(filename string) string {

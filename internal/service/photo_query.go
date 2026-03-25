@@ -39,6 +39,31 @@ func (s *PhotoService) ListShares(userID int64) ([]*storage.ShareLink, error) {
 	return s.repo.ListShareLinks(userID)
 }
 
+// CreateShare 创建分享链接。
+func (s *PhotoService) CreateShare(input CreateShareInput) (*storage.ShareLink, error) {
+	if input.Type != storage.ShareTypePhoto && input.Type != storage.ShareTypeAlbum {
+		return nil, fmt.Errorf("无效的分享类型: %s", input.Type)
+	}
+
+	token, err := generateToken(16)
+	if err != nil {
+		return nil, fmt.Errorf("生成 token 失败: %w", err)
+	}
+
+	link := &storage.ShareLink{
+		Token:     token,
+		Type:      input.Type,
+		TargetID:  input.TargetID,
+		CreatedBy: input.UserID,
+		ExpiresAt: input.ExpiresAt,
+		CreatedAt: time.Now(),
+	}
+	if err := s.repo.CreateShareLink(link); err != nil {
+		return nil, err
+	}
+	return link, nil
+}
+
 // CreateAlbum 创建相册。
 func (s *PhotoService) CreateAlbum(name, description string, userID int64) (*storage.Album, error) {
 	if name == "" {

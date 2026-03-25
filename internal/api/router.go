@@ -29,6 +29,7 @@ const tempMediaDirName = ".media-upload-tmp"
 type videoRegistrar interface {
 	AddPhoto(albumID int64, photoID int64, userID int64) error
 	CreateAlbum(name, description string, userID int64) (*storage.Album, error)
+	CreateShare(input service.CreateShareInput) (*storage.ShareLink, error)
 	DeleteAlbum(id int64, userID int64) error
 	GetAlbum(id int64, userID int64) (*storage.Album, error)
 	GetAlbumDownloadEntries(albumID int64, userID int64) (string, []service.DownloadEntry, error)
@@ -67,6 +68,12 @@ type albumRequest struct {
 	CoverPhotoID *int64 `json:"cover_photo_id"`
 }
 
+type shareRequest struct {
+	Type      string `json:"type"`
+	TargetID  int64  `json:"target_id"`
+	ExpiresIn *int64 `json:"expires_in_days,omitempty"`
+}
+
 type contextKey string
 
 const userContextKey contextKey = "user"
@@ -99,6 +106,7 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 		media.DELETE("/albums/:id", authMiddleware(cfg), handleDeleteAlbumMedia(cfg, registrar))
 		media.DELETE("/albums/:id/:mediaId", authMiddleware(cfg), handleRemoveMediaFromAlbum(cfg, registrar))
 		media.GET("/shares", authMiddleware(cfg), handleListSharesMedia(cfg, registrar))
+		media.POST("/shares", authMiddleware(cfg), handleCreateShareMedia(cfg, registrar))
 		media.GET("", authMiddleware(cfg), handleListMedia(cfg, registrar))
 		media.GET("/trash", authMiddleware(cfg), handleListTrashMedia(cfg, registrar))
 		media.GET(":id", authMiddleware(cfg), handleGetMedia(cfg, registrar))
@@ -496,6 +504,41 @@ func handleListSharesMedia(cfg *config.Config, registrar videoRegistrar) gin.Han
 			return
 		}
 		c.JSON(http.StatusOK, links)
+	}
+}
+
+func handleCreateShareMedia(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		var req shareRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求体"})
+			return
+		}
+		var expiresAt *time.Time
+		if req.ExpiresIn != nil && *req.ExpiresIn > 0 {
+			t := time.Now().Add(time.Duration(*req.ExpiresIn) * 24 * time.Hour)
+			expiresAt = &t
+		}
+		link, err := registrar.CreateShare(service.CreateShareInput{
+			Type:      req.Type,
+			TargetID:  req.TargetID,
+			UserID:    userID,
+			ExpiresAt: expiresAt,
+		})
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusCreated, link)
 	}
 }
 

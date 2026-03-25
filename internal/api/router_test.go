@@ -25,6 +25,7 @@ import (
 type stubRegistrar struct {
 	addPhoto                func(albumID int64, photoID int64, userID int64) error
 	createAlbum             func(name, description string, userID int64) (*storage.Album, error)
+	createShare             func(input service.CreateShareInput) (*storage.ShareLink, error)
 	deleteAlbum             func(id int64, userID int64) error
 	getAlbum                func(id int64, userID int64) (*storage.Album, error)
 	getAlbumDownloadEntries func(albumID int64, userID int64) (string, []service.DownloadEntry, error)
@@ -57,6 +58,10 @@ func (s stubRegistrar) AddPhoto(albumID int64, photoID int64, userID int64) erro
 
 func (s stubRegistrar) CreateAlbum(name, description string, userID int64) (*storage.Album, error) {
 	return s.createAlbum(name, description, userID)
+}
+
+func (s stubRegistrar) CreateShare(input service.CreateShareInput) (*storage.ShareLink, error) {
+	return s.createShare(input)
 }
 
 func (s stubRegistrar) DeleteAlbum(id int64, userID int64) error {
@@ -146,6 +151,8 @@ func okRegistrar() stubRegistrar {
 		return nil
 	}, createAlbum: func(name, description string, userID int64) (*storage.Album, error) {
 		return &storage.Album{ID: 8, Name: name, Description: description, CreatedBy: userID, CreatedAt: time.Now()}, nil
+	}, createShare: func(input service.CreateShareInput) (*storage.ShareLink, error) {
+		return &storage.ShareLink{ID: 3, Token: "new-token", Type: input.Type, TargetID: input.TargetID, CreatedBy: input.UserID, ExpiresAt: input.ExpiresAt, CreatedAt: time.Now()}, nil
 	}, deleteAlbum: func(id int64, userID int64) error {
 		return nil
 	}, getAlbum: func(id int64, userID int64) (*storage.Album, error) {
@@ -854,6 +861,79 @@ func TestListSharesMedia_Success(t *testing.T) {
 	}
 	if links[0].Token != "token-1" || links[1].Type != storage.ShareTypeAlbum {
 		t.Fatalf("分享列表响应不正确: %+v", links)
+	}
+}
+
+func TestCreateShareMedia_RequiresAuth(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodPost, "/api/media/shares", strings.NewReader(`{"type":"photo","target_id":11}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("期望 401，得到 %d", w.Code)
+	}
+}
+
+func TestCreateShareMedia_Success(t *testing.T) {
+	called := false
+	var gotInput service.CreateShareInput
+	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+		addPhoto:    okRegistrar().addPhoto,
+		createAlbum: okRegistrar().createAlbum,
+		createShare: func(input service.CreateShareInput) (*storage.ShareLink, error) {
+			called = true
+			gotInput = input
+			return &storage.ShareLink{ID: 3, Token: "new-token", Type: input.Type, TargetID: input.TargetID, CreatedBy: input.UserID, ExpiresAt: input.ExpiresAt, CreatedAt: time.Now()}, nil
+		},
+		deleteAlbum:             okRegistrar().deleteAlbum,
+		getAlbum:                okRegistrar().getAlbum,
+		getAlbumDownloadEntries: okRegistrar().getAlbumDownloadEntries,
+		listAlbums:              okRegistrar().listAlbums,
+		listShares:              okRegistrar().listShares,
+		removePhoto:             okRegistrar().removePhoto,
+		updateAlbum:             okRegistrar().updateAlbum,
+		register:                okRegistrar().register,
+		deletePhoto:             okRegistrar().deletePhoto,
+		emptyTrash:              okRegistrar().emptyTrash,
+		getDownloadEntries:      okRegistrar().getDownloadEntries,
+		getAlbumMedia:           okRegistrar().getAlbumMedia,
+		getPhoto:                okRegistrar().getPhoto,
+		getByUUID:               okRegistrar().getByUUID,
+		getTrash:                okRegistrar().getTrash,
+		getTimeline:             okRegistrar().getTimeline,
+		mediaPath:               okRegistrar().mediaPath,
+		permanentlyDeletePhoto:  okRegistrar().permanentlyDeletePhoto,
+		posterPath:              okRegistrar().posterPath,
+		restorePhoto:            okRegistrar().restorePhoto,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/media/shares", strings.NewReader(`{"type":"photo","target_id":11,"expires_in_days":7}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("期望 201，得到 %d", w.Code)
+	}
+	if !called {
+		t.Fatal("应调用创建分享逻辑")
+	}
+	if gotInput.Type != storage.ShareTypePhoto || gotInput.TargetID != 11 || gotInput.ExpiresAt == nil {
+		t.Fatalf("创建分享参数不正确: %+v", gotInput)
+	}
+	var link struct {
+		ID    int64  `json:"id"`
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &link); err != nil {
+		t.Fatalf("解析创建分享响应失败: %v", err)
+	}
+	if link.ID != 3 || link.Token != "new-token" {
+		t.Fatalf("创建分享响应不正确: %+v", link)
 	}
 }
 

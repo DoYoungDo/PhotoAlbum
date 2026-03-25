@@ -1317,7 +1317,7 @@ async function generateShareLink() {
   const body = { type: _shareTarget.type, target_id: _shareTarget.targetId };
   if (days > 0) body.expires_in_days = days;
   try {
-    const link = await api.post('/api/shares', body);
+		const link = await api.post('/api/media/shares', body);
     // 更新 shareMap
     const key = `${link.type}:${link.target_id}`;
     if (!state.shareMap[key]) state.shareMap[key] = [];

@@ -48,6 +48,7 @@ type stubRegistrar struct {
 	permanentlyDeletePhoto  func(id int64, userID int64) error
 	posterPath              func(photo *storage.Photo) string
 	restorePhoto            func(id int64, userID int64) error
+	thumbnailPath           func(photo *storage.Photo) string
 }
 
 func (s stubRegistrar) RegisterUploadedVideo(input service.RegisterUploadedVideoInput) (*storage.Photo, error) {
@@ -142,6 +143,10 @@ func (s stubRegistrar) PosterPath(photo *storage.Photo) string {
 	return s.posterPath(photo)
 }
 
+func (s stubRegistrar) ThumbnailPath(photo *storage.Photo) string {
+	return s.thumbnailPath(photo)
+}
+
 func (s stubRegistrar) PermanentlyDeletePhoto(id int64, userID int64) error {
 	return s.permanentlyDeletePhoto(id, userID)
 }
@@ -156,6 +161,9 @@ func okRegistrar() stubRegistrar {
 	}
 	posterFilePath := func(photo *storage.Photo) string {
 		return filepath.Join(tTempStoragePath, ".posters", photo.UUID+".jpg")
+	}
+	thumbnailFilePath := func(photo *storage.Photo) string {
+		return filepath.Join(tTempStoragePath, ".thumbnails", photo.UUID+filepath.Ext(photo.OriginalName))
 	}
 	return stubRegistrar{addPhoto: func(albumID int64, photoID int64, userID int64) error {
 		return nil
@@ -294,7 +302,7 @@ func okRegistrar() stubRegistrar {
 		return nil
 	}, posterPath: posterFilePath, restorePhoto: func(id int64, userID int64) error {
 		return nil
-	}}
+	}, thumbnailPath: thumbnailFilePath}
 }
 
 func testConfig() *config.Config {
@@ -1124,6 +1132,216 @@ func TestGetSharedAlbumMedia_Success(t *testing.T) {
 	}
 	if len(page.Photos) != 2 || page.Photos[1].MediaKind != storage.MediaKindVideo {
 		t.Fatalf("分享相册内容响应不正确: %+v", page)
+	}
+}
+
+func TestServePhotoFile_Success(t *testing.T) {
+	cfg := testConfig()
+	storageDir := t.TempDir()
+	cfg.StoragePath = storageDir
+	mediaFile := filepath.Join(storageDir, "shared.jpg")
+	if err := os.WriteFile(mediaFile, []byte("image-data"), 0644); err != nil {
+		t.Fatalf("创建测试原图失败: %v", err)
+	}
+	router := NewRouter(cfg, http.NotFoundHandler(), stubRegistrar{
+		addPhoto:                okRegistrar().addPhoto,
+		createAlbum:             okRegistrar().createAlbum,
+		createShare:             okRegistrar().createShare,
+		deleteAlbum:             okRegistrar().deleteAlbum,
+		deleteShare:             okRegistrar().deleteShare,
+		getAlbum:                okRegistrar().getAlbum,
+		getAlbumDownloadEntries: okRegistrar().getAlbumDownloadEntries,
+		getShareByToken:         okRegistrar().getShareByToken,
+		listAlbums:              okRegistrar().listAlbums,
+		listShares:              okRegistrar().listShares,
+		removePhoto:             okRegistrar().removePhoto,
+		updateAlbum:             okRegistrar().updateAlbum,
+		register:                okRegistrar().register,
+		deletePhoto:             okRegistrar().deletePhoto,
+		emptyTrash:              okRegistrar().emptyTrash,
+		getDownloadEntries:      okRegistrar().getDownloadEntries,
+		getAlbumMedia:           okRegistrar().getAlbumMedia,
+		getPhoto:                okRegistrar().getPhoto,
+		getByUUID: func(uuid string, userID int64) (*storage.Photo, error) {
+			return &storage.Photo{ID: 21, UUID: uuid, OriginalName: "shared.jpg", MediaKind: storage.MediaKindImage, MimeType: "image/jpeg", UploadedBy: userID}, nil
+		},
+		getTrash:               okRegistrar().getTrash,
+		getTimeline:            okRegistrar().getTimeline,
+		mediaPath:              func(photo *storage.Photo) string { return mediaFile },
+		permanentlyDeletePhoto: okRegistrar().permanentlyDeletePhoto,
+		posterPath:             okRegistrar().posterPath,
+		restorePhoto:           okRegistrar().restorePhoto,
+		thumbnailPath:          okRegistrar().thumbnailPath,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/media/photos/shared.jpg", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, cfg.JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+}
+
+func TestServeThumbnailFile_Success(t *testing.T) {
+	cfg := testConfig()
+	storageDir := t.TempDir()
+	cfg.StoragePath = storageDir
+	thumbDir := filepath.Join(storageDir, ".thumbnails")
+	if err := os.MkdirAll(thumbDir, 0755); err != nil {
+		t.Fatalf("创建缩略图目录失败: %v", err)
+	}
+	thumbFile := filepath.Join(thumbDir, "shared.jpg")
+	if err := os.WriteFile(thumbFile, []byte("thumb-data"), 0644); err != nil {
+		t.Fatalf("创建测试缩略图失败: %v", err)
+	}
+	router := NewRouter(cfg, http.NotFoundHandler(), stubRegistrar{
+		addPhoto:                okRegistrar().addPhoto,
+		createAlbum:             okRegistrar().createAlbum,
+		createShare:             okRegistrar().createShare,
+		deleteAlbum:             okRegistrar().deleteAlbum,
+		deleteShare:             okRegistrar().deleteShare,
+		getAlbum:                okRegistrar().getAlbum,
+		getAlbumDownloadEntries: okRegistrar().getAlbumDownloadEntries,
+		getShareByToken:         okRegistrar().getShareByToken,
+		listAlbums:              okRegistrar().listAlbums,
+		listShares:              okRegistrar().listShares,
+		removePhoto:             okRegistrar().removePhoto,
+		updateAlbum:             okRegistrar().updateAlbum,
+		register:                okRegistrar().register,
+		deletePhoto:             okRegistrar().deletePhoto,
+		emptyTrash:              okRegistrar().emptyTrash,
+		getDownloadEntries:      okRegistrar().getDownloadEntries,
+		getAlbumMedia:           okRegistrar().getAlbumMedia,
+		getPhoto:                okRegistrar().getPhoto,
+		getByUUID: func(uuid string, userID int64) (*storage.Photo, error) {
+			return &storage.Photo{ID: 21, UUID: uuid, OriginalName: "shared.jpg", MediaKind: storage.MediaKindImage, MimeType: "image/jpeg", UploadedBy: userID}, nil
+		},
+		getTrash:               okRegistrar().getTrash,
+		getTimeline:            okRegistrar().getTimeline,
+		mediaPath:              okRegistrar().mediaPath,
+		permanentlyDeletePhoto: okRegistrar().permanentlyDeletePhoto,
+		posterPath:             okRegistrar().posterPath,
+		restorePhoto:           okRegistrar().restorePhoto,
+		thumbnailPath:          func(photo *storage.Photo) string { return thumbFile },
+	})
+	req := httptest.NewRequest(http.MethodGet, "/media/thumbnails/shared.jpg", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, cfg.JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+}
+
+func TestServeSharedMediaFile_AlbumSuccess(t *testing.T) {
+	cfg := testConfig()
+	storageDir := t.TempDir()
+	cfg.StoragePath = storageDir
+	mediaFile := filepath.Join(storageDir, "album.mp4")
+	if err := os.WriteFile(mediaFile, []byte("album-media"), 0644); err != nil {
+		t.Fatalf("创建测试分享媒体失败: %v", err)
+	}
+	router := NewRouter(cfg, http.NotFoundHandler(), stubRegistrar{
+		addPhoto:                okRegistrar().addPhoto,
+		createAlbum:             okRegistrar().createAlbum,
+		createShare:             okRegistrar().createShare,
+		deleteAlbum:             okRegistrar().deleteAlbum,
+		deleteShare:             okRegistrar().deleteShare,
+		getAlbum:                okRegistrar().getAlbum,
+		getAlbumDownloadEntries: okRegistrar().getAlbumDownloadEntries,
+		getShareByToken: func(token string) (*storage.ShareLink, error) {
+			return &storage.ShareLink{ID: 9, Token: token, Type: storage.ShareTypeAlbum, TargetID: 8, CreatedBy: 1, CreatedAt: time.Now()}, nil
+		},
+		listAlbums:         okRegistrar().listAlbums,
+		listShares:         okRegistrar().listShares,
+		removePhoto:        okRegistrar().removePhoto,
+		updateAlbum:        okRegistrar().updateAlbum,
+		register:           okRegistrar().register,
+		deletePhoto:        okRegistrar().deletePhoto,
+		emptyTrash:         okRegistrar().emptyTrash,
+		getDownloadEntries: okRegistrar().getDownloadEntries,
+		getAlbumMedia: func(params storage.ListAlbumPhotosParams) (*storage.PhotoPage, error) {
+			return &storage.PhotoPage{Photos: []*storage.Photo{{ID: 31, UUID: "album-media", OriginalName: "album.mp4", MediaKind: storage.MediaKindVideo, MimeType: "video/mp4", UploadedBy: params.UserID}}}, nil
+		},
+		getPhoto:               okRegistrar().getPhoto,
+		getByUUID:              okRegistrar().getByUUID,
+		getTrash:               okRegistrar().getTrash,
+		getTimeline:            okRegistrar().getTimeline,
+		mediaPath:              func(photo *storage.Photo) string { return mediaFile },
+		permanentlyDeletePhoto: okRegistrar().permanentlyDeletePhoto,
+		posterPath:             okRegistrar().posterPath,
+		restorePhoto:           okRegistrar().restorePhoto,
+		thumbnailPath:          okRegistrar().thumbnailPath,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/media/s/album-token/album-media.mp4", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+}
+
+func TestDownloadSharedMedia_Success(t *testing.T) {
+	cfg := testConfig()
+	storageDir := t.TempDir()
+	cfg.StoragePath = storageDir
+	mediaFile := filepath.Join(storageDir, "shared.mp4")
+	if err := os.WriteFile(mediaFile, []byte("shared-media"), 0644); err != nil {
+		t.Fatalf("创建测试分享下载文件失败: %v", err)
+	}
+	router := NewRouter(cfg, http.NotFoundHandler(), stubRegistrar{
+		addPhoto:                okRegistrar().addPhoto,
+		createAlbum:             okRegistrar().createAlbum,
+		createShare:             okRegistrar().createShare,
+		deleteAlbum:             okRegistrar().deleteAlbum,
+		deleteShare:             okRegistrar().deleteShare,
+		getAlbum:                okRegistrar().getAlbum,
+		getAlbumDownloadEntries: okRegistrar().getAlbumDownloadEntries,
+		getShareByToken: func(token string) (*storage.ShareLink, error) {
+			return &storage.ShareLink{ID: 4, Token: token, Type: storage.ShareTypePhoto, TargetID: 11, CreatedBy: 1, CreatedAt: time.Now()}, nil
+		},
+		listAlbums:         okRegistrar().listAlbums,
+		listShares:         okRegistrar().listShares,
+		removePhoto:        okRegistrar().removePhoto,
+		updateAlbum:        okRegistrar().updateAlbum,
+		register:           okRegistrar().register,
+		deletePhoto:        okRegistrar().deletePhoto,
+		emptyTrash:         okRegistrar().emptyTrash,
+		getDownloadEntries: okRegistrar().getDownloadEntries,
+		getAlbumMedia:      okRegistrar().getAlbumMedia,
+		getPhoto: func(id int64, userID int64) (*storage.Photo, error) {
+			return &storage.Photo{ID: id, UUID: "shared", OriginalName: "shared.mp4", MediaKind: storage.MediaKindVideo, MimeType: "video/mp4", UploadedBy: userID}, nil
+		},
+		getByUUID:              okRegistrar().getByUUID,
+		getTrash:               okRegistrar().getTrash,
+		getTimeline:            okRegistrar().getTimeline,
+		mediaPath:              func(photo *storage.Photo) string { return mediaFile },
+		permanentlyDeletePhoto: okRegistrar().permanentlyDeletePhoto,
+		posterPath:             okRegistrar().posterPath,
+		restorePhoto:           okRegistrar().restorePhoto,
+		thumbnailPath:          okRegistrar().thumbnailPath,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/s/photo-token/download", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	if !strings.Contains(w.Header().Get("Content-Disposition"), "shared.mp4") {
+		t.Fatalf("下载头不正确: %s", w.Header().Get("Content-Disposition"))
+	}
+}
+
+func TestHandleSharePage_Success(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/s/token-1", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "分享 - PhotoAlbum") {
+		t.Fatalf("分享页内容不正确")
 	}
 }
 

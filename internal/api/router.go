@@ -52,6 +52,7 @@ type videoRegistrar interface {
 	GetTimeline(params storage.ListPhotosParams) (*storage.PhotoPage, error)
 	MediaPath(photo *storage.Photo) string
 	PosterPath(photo *storage.Photo) string
+	ThumbnailPath(photo *storage.Photo) string
 }
 
 type mediaDownloadRequest struct {
@@ -123,9 +124,14 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 	}
 
 	r.GET("/media/files/:uuid", authMiddleware(cfg), handleServeMediaFile(cfg, registrar))
+	r.GET("/media/photos/:uuid", authMiddleware(cfg), handleServePhotoFile(cfg, registrar))
+	r.GET("/media/thumbnails/:uuid", authMiddleware(cfg), handleServeThumbnailFile(cfg, registrar))
 	r.GET("/media/posters/:uuid", authMiddleware(cfg), handleServePoster(cfg, registrar))
+	r.GET("/media/s/:token/:uuid", handleServeSharedMediaFile(cfg, registrar))
 	r.GET("/api/s/:token", handleGetShareByToken(cfg, registrar))
 	r.GET("/api/s/:token/photos", handleGetSharedAlbumMedia(cfg, registrar))
+	r.GET("/s/:token/download", handleDownloadSharedMedia(cfg, registrar))
+	r.GET("/s/:token", handleSharePage())
 
 	legacyHandler := gin.WrapH(legacy)
 	r.NoRoute(legacyHandler)
@@ -592,6 +598,114 @@ func handleGetSharedAlbumMedia(cfg *config.Config, registrar videoRegistrar) gin
 			return
 		}
 		c.JSON(http.StatusOK, page)
+	}
+}
+
+func handleServePhotoFile(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		uuid := strings.TrimSuffix(c.Param("uuid"), filepath.Ext(c.Param("uuid")))
+		photo, err := registrar.GetPhotoByUUIDAny(uuid, userID)
+		if err != nil || photo == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "照片/视频不存在"})
+			return
+		}
+		c.File(registrar.MediaPath(photo))
+	}
+}
+
+func handleServeThumbnailFile(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		uuid := strings.TrimSuffix(c.Param("uuid"), filepath.Ext(c.Param("uuid")))
+		photo, err := registrar.GetPhotoByUUIDAny(uuid, userID)
+		if err != nil || photo == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "照片/视频不存在"})
+			return
+		}
+		c.File(registrar.ThumbnailPath(photo))
+	}
+}
+
+func handleServeSharedMediaFile(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		link, err := registrar.GetShareByToken(c.Param("token"))
+		if err != nil || link == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "分享链接不存在或已过期"})
+			return
+		}
+
+		switch link.Type {
+		case storage.ShareTypePhoto:
+			photo, err := registrar.GetPhoto(link.TargetID, link.CreatedBy)
+			if err != nil || photo == nil {
+				c.JSON(http.StatusNotFound, gin.H{"error": "照片/视频不存在"})
+				return
+			}
+			c.File(registrar.MediaPath(photo))
+		case storage.ShareTypeAlbum:
+			uuid := strings.TrimSuffix(c.Param("uuid"), filepath.Ext(c.Param("uuid")))
+			page, err := registrar.GetAlbumMedia(storage.ListAlbumPhotosParams{AlbumID: link.TargetID, UserID: link.CreatedBy, Limit: 10000})
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+			for _, photo := range page.Photos {
+				if photo.UUID == uuid {
+					c.File(registrar.MediaPath(photo))
+					return
+				}
+			}
+			c.JSON(http.StatusNotFound, gin.H{"error": "照片/视频不存在"})
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前分享不支持该媒体访问"})
+		}
+	}
+}
+
+func handleDownloadSharedMedia(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		link, err := registrar.GetShareByToken(c.Param("token"))
+		if err != nil || link == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "分享链接不存在或已过期"})
+			return
+		}
+		if link.Type != storage.ShareTypePhoto {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前分享不支持下载"})
+			return
+		}
+		photo, err := registrar.GetPhoto(link.TargetID, link.CreatedBy)
+		if err != nil || photo == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "照片/视频不存在"})
+			return
+		}
+		c.Header("Content-Type", photo.MimeType)
+		c.Header("Content-Disposition", contentDispositionAttachment(photo.OriginalName))
+		c.File(registrar.MediaPath(photo))
 	}
 }
 

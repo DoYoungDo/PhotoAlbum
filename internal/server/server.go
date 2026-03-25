@@ -67,8 +67,6 @@ func (s *Server) registerRoutes() {
 
 	// 登录/登出
 	s.mux.HandleFunc("GET /login", s.handleLoginPage)
-	s.mux.HandleFunc("POST /api/auth/login", s.handleLogin)
-	s.mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
 
 }
 

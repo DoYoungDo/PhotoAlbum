@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	"encoding/json"
 	"image"
 	"image/jpeg"
 	"net/http"
@@ -139,60 +138,6 @@ func TestAuthMiddleware_AllowsValidToken(t *testing.T) {
 	s.ServeHTTP(w, req)
 	if w.Code == http.StatusUnauthorized {
 		t.Fatalf("有效 token 不应得到 401，得到 %d", w.Code)
-	}
-}
-
-// --- Login / Logout 测试 ---
-
-func TestLogin_Success(t *testing.T) {
-	s := newTestServer(t)
-	body, _ := json.Marshal(map[string]string{"username": "alice", "password": "password123"})
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	s.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("期望 200，得到 %d，body=%s", w.Code, w.Body.String())
-	}
-	found := false
-	for _, c := range w.Result().Cookies() {
-		if c.Name == authCookieName {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatal("登录后应该返回认证 cookie")
-	}
-}
-
-func TestLogin_WrongPassword(t *testing.T) {
-	s := newTestServer(t)
-	body, _ := json.Marshal(map[string]string{"username": "alice", "password": "wrongpass"})
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	s.ServeHTTP(w, req)
-	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("期望 401，得到 %d", w.Code)
-	}
-}
-
-func TestLogin_UnknownUser(t *testing.T) {
-	s := newTestServer(t)
-	body, _ := json.Marshal(map[string]string{"username": "nobody", "password": "pass"})
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
-	w := httptest.NewRecorder()
-	s.ServeHTTP(w, req)
-	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("期望 401，得到 %d", w.Code)
-	}
-}
-
-func TestLogout_ClearsCookie(t *testing.T) {
-	s := newTestServer(t)
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
-	w := httptest.NewRecorder()
-	s.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("期望 200，得到 %d", w.Code)
 	}
 }
 

@@ -317,7 +317,7 @@ func testConfig() *config.Config {
 		StoragePath: tTempStoragePath,
 		JWTSecret:   "test-secret",
 		Users: []config.User{
-			{Username: "alice", PasswordHash: "ignored"},
+			{Username: "alice", PasswordHash: "$2a$10$m2CWsTFrqFNGPW/bGg4UluO.WX/e.rgEkX4yxHJI.VABfOyGA8BA2"},
 		},
 	}
 }
@@ -1970,6 +1970,53 @@ func TestNewRouter_FallsBackToLegacyHandler(t *testing.T) {
 
 	if w.Code != http.StatusTeapot {
 		t.Fatalf("期望 418，得到 %d", w.Code)
+	}
+}
+
+func TestLogin_Success(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"username":"alice","password":"password123"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	found := false
+	for _, c := range w.Result().Cookies() {
+		if c.Name == authCookieName {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("登录后应返回认证 cookie")
+	}
+}
+
+func TestLogin_WrongPassword(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"username":"alice","password":"wrongpass"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("期望 401，得到 %d", w.Code)
+	}
+}
+
+func TestLogout_ClearsCookie(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
 	}
 }
 

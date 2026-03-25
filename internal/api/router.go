@@ -86,6 +86,11 @@ type shareDetailResponse struct {
 	TargetMimeType     string `json:"target_mime_type,omitempty"`
 }
 
+type authLoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
 type contextKey string
 
 const userContextKey contextKey = "user"
@@ -105,6 +110,9 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
+
+	r.POST("/api/auth/login", handleLogin(cfg))
+	r.POST("/api/auth/logout", handleLogout())
 
 	media := r.Group("/api/media")
 	{
@@ -147,6 +155,41 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 	r.NoMethod(legacyHandler)
 
 	return r
+}
+
+func handleLogin(cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req authLoginRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求体"})
+			return
+		}
+		verifyCfg := &config.Config{Users: cfg.Users}
+		if _, err := config.VerifyPassword(verifyCfg, req.Username, req.Password); err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码错误"})
+			return
+		}
+		token, err := generateAuthToken(cfg.JWTSecret, req.Username)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "生成令牌失败"})
+			return
+		}
+		http.SetCookie(c.Writer, &http.Cookie{Name: authCookieName, Value: token, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, Expires: time.Now().Add(7 * 24 * time.Hour)})
+		c.JSON(http.StatusOK, gin.H{"message": "登录成功"})
+	}
+}
+
+func handleLogout() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		http.SetCookie(c.Writer, &http.Cookie{Name: authCookieName, Value: "", Path: "/", HttpOnly: true, MaxAge: -1})
+		c.JSON(http.StatusOK, gin.H{"message": "已退出登录"})
+	}
+}
+
+func generateAuthToken(secret, username string) (string, error) {
+	claims := Claims{Username: username, RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(7 * 24 * time.Hour)), IssuedAt: jwt.NewNumericDate(time.Now())}}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(secret))
 }
 
 func handleGetMedia(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {

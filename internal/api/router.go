@@ -29,6 +29,7 @@ const tempMediaDirName = ".media-upload-tmp"
 type videoRegistrar interface {
 	AddPhoto(albumID int64, photoID int64, userID int64) error
 	GetAlbum(id int64, userID int64) (*storage.Album, error)
+	ListAlbums(userID int64) ([]*storage.Album, error)
 	RemovePhoto(albumID int64, photoID int64, userID int64) error
 	RegisterUploadedVideo(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
 	DeletePhoto(id int64, userID int64) error
@@ -77,6 +78,7 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 
 	media := r.Group("/api/media")
 	{
+		media.GET("/albums", authMiddleware(cfg), handleListAlbumsMedia(cfg, registrar))
 		media.GET("/albums/:id/detail", authMiddleware(cfg), handleGetAlbumDetail(cfg, registrar))
 		media.GET("/albums/:id", authMiddleware(cfg), handleListAlbumMedia(cfg, registrar))
 		media.POST("/albums/:id", authMiddleware(cfg), handleAddMediaToAlbum(cfg, registrar))
@@ -359,6 +361,26 @@ func handleGetAlbumDetail(cfg *config.Config, registrar videoRegistrar) gin.Hand
 			return
 		}
 		c.JSON(http.StatusOK, album)
+	}
+}
+
+func handleListAlbumsMedia(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		albums, err := registrar.ListAlbums(userID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, albums)
 	}
 }
 

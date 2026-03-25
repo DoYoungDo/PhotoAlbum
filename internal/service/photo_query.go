@@ -28,6 +28,11 @@ func (s *PhotoService) GetAlbum(id int64, userID int64) (*storage.Album, error) 
 	return s.repo.GetAlbumByID(id, userID)
 }
 
+// ListAlbums 获取用户所有相册。
+func (s *PhotoService) ListAlbums(userID int64) ([]*storage.Album, error) {
+	return s.repo.ListAlbums(userID)
+}
+
 // AddPhoto 将媒体添加到相册。
 func (s *PhotoService) AddPhoto(albumID int64, photoID int64, userID int64) error {
 	return s.repo.AddPhotoToAlbum(albumID, photoID, userID)

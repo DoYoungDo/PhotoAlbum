@@ -536,7 +536,7 @@ async function renderAlbums() {
 
   $('#content').innerHTML = `<div id="album-grid-wrap"></div>`;
   try {
-    state.albums = await api.get('/api/albums');
+	state.albums = await api.get('/api/media/albums');
     renderAlbumGrid();
   } catch(e) { $('#content').innerHTML = `<p style="color:var(--danger)">加载失败</p>`; }
 }
@@ -1233,7 +1233,7 @@ async function openAlbumPickerModal(photoIds) {
   grid.innerHTML = '<div style="padding:16px;color:var(--text2)">加载中…</div>';
 
   try {
-    const albums = await api.get('/api/albums');
+		const albums = await api.get('/api/media/albums');
     if (!albums || !albums.length) {
       grid.innerHTML = `<div style="padding:16px;color:var(--text2)">还没有相册，请先新建相册</div>`;
       $('#album-picker-hint').textContent = '你可以直接在当前弹窗里去创建相册。';

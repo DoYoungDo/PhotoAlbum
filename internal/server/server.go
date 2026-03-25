@@ -75,10 +75,6 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/photos/upload", s.auth(s.handleUploadPhoto))
 	s.mux.HandleFunc("POST /api/photos/download", s.auth(s.handleDownloadPhotos))
 
-	// 图片文件服务
-	s.mux.HandleFunc("GET /media/photos/{uuid}", s.auth(s.handleServePhoto))
-	s.mux.HandleFunc("GET /media/thumbnails/{uuid}", s.auth(s.handleServeThumbnail))
-
 }
 
 // writeJSON 写入 JSON 响应

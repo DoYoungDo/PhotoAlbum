@@ -1048,13 +1048,18 @@ func TestGetShareByToken_Success(t *testing.T) {
 		t.Fatalf("期望 200，得到 %d", w.Code)
 	}
 	var link struct {
-		Token string `json:"token"`
-		Type  string `json:"type"`
+		Token           string `json:"token"`
+		Type            string `json:"type"`
+		TargetMediaKind string `json:"target_media_kind"`
+		TargetMimeType  string `json:"target_mime_type"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &link); err != nil {
 		t.Fatalf("解析分享详情响应失败: %v", err)
 	}
 	if link.Token != "token-1" || link.Type != storage.ShareTypePhoto {
+		t.Fatalf("分享详情响应不正确: %+v", link)
+	}
+	if link.TargetMediaKind != storage.MediaKindVideo || link.TargetMimeType != "video/mp4" {
 		t.Fatalf("分享详情响应不正确: %+v", link)
 	}
 }
@@ -1342,6 +1347,9 @@ func TestHandleSharePage_Success(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "分享 - PhotoAlbum") {
 		t.Fatalf("分享页内容不正确")
+	}
+	if !strings.Contains(w.Body.String(), "link.target_media_kind === 'video'") {
+		t.Fatalf("分享页未包含视频展示逻辑")
 	}
 }
 

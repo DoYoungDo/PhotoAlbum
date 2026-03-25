@@ -77,6 +77,14 @@ type shareRequest struct {
 	ExpiresIn *int64 `json:"expires_in_days,omitempty"`
 }
 
+type shareDetailResponse struct {
+	*storage.ShareLink
+	TargetUUID         string `json:"target_uuid,omitempty"`
+	TargetOriginalName string `json:"target_original_name,omitempty"`
+	TargetMediaKind    string `json:"target_media_kind,omitempty"`
+	TargetMimeType     string `json:"target_mime_type,omitempty"`
+}
+
 type contextKey string
 
 const userContextKey contextKey = "user"
@@ -568,7 +576,17 @@ func handleGetShareByToken(cfg *config.Config, registrar videoRegistrar) gin.Han
 			c.JSON(http.StatusNotFound, gin.H{"error": "分享链接不存在或已过期"})
 			return
 		}
-		c.JSON(http.StatusOK, link)
+		resp := shareDetailResponse{ShareLink: link}
+		if link.Type == storage.ShareTypePhoto {
+			photo, err := registrar.GetPhoto(link.TargetID, link.CreatedBy)
+			if err == nil && photo != nil {
+				resp.TargetUUID = photo.UUID
+				resp.TargetOriginalName = photo.OriginalName
+				resp.TargetMediaKind = photo.MediaKind
+				resp.TargetMimeType = photo.MimeType
+			}
+		}
+		c.JSON(http.StatusOK, resp)
 	}
 }
 

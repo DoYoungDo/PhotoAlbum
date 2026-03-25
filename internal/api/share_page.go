@@ -32,16 +32,27 @@ const sharePageHTML = `<!doctype html>
 <script>
 (function() {
   var token = location.pathname.split('/').pop();
+  function escapeHtml(value) {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
   async function load() {
     try {
       var r = await fetch('/api/s/' + token);
       if (!r.ok) { document.getElementById('share-title').textContent = '链接无效或已过期'; return; }
       var link = await r.json();
       if (link.type === 'photo') {
-        document.getElementById('share-title').textContent = '分享的照片';
+        document.getElementById('share-title').textContent = link.target_media_kind === 'video' ? '分享的视频' : '分享的照片';
+        var mediaUrl = '/media/s/' + token + '/' + (link.target_uuid || link.target_id);
+        var mediaHtml = link.target_media_kind === 'video'
+          ? '<video controls playsinline preload="metadata" src="' + mediaUrl + '" style="max-width:100%;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.15)"></video>'
+          : '<img src="' + mediaUrl + '" alt="' + escapeHtml(link.target_original_name || 'shared-media') + '" style="max-width:100%;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.15)">';
         document.getElementById('share-content').innerHTML =
-          '<div style="margin-bottom:12px"><a class="btn btn-primary" href="/s/' + token + '/download">下载原图</a></div>' +
-          '<img src="/media/s/' + token + '/' + link.target_id + '" style="max-width:100%;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.15)">';
+          '<div style="margin-bottom:12px"><a class="btn btn-primary" href="/s/' + token + '/download">下载原文件</a></div>' + mediaHtml;
       } else if (link.type === 'album') {
         document.getElementById('share-title').textContent = '分享的相册';
         var pr = await fetch('/api/s/' + token + '/photos');
@@ -52,7 +63,11 @@ const sharePageHTML = `<!doctype html>
           (pg.photos || []).forEach(function(p) {
             var d = document.createElement('div');
             d.className = 'photo-thumb';
-            d.innerHTML = '<img loading="lazy" src="/media/s/' + token + '/' + p.uuid + '" alt="' + p.original_name + '">';
+            if (p.media_kind === 'video') {
+              d.innerHTML = '<video muted playsinline preload="metadata" src="/media/s/' + token + '/' + p.uuid + '"></video>';
+            } else {
+              d.innerHTML = '<img loading="lazy" src="/media/s/' + token + '/' + p.uuid + '" alt="' + escapeHtml(p.original_name) + '">';
+            }
             grid.appendChild(d);
           });
           document.getElementById('share-content').appendChild(grid);

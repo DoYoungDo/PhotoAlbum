@@ -64,6 +64,11 @@ func (s *PhotoService) CreateShare(input CreateShareInput) (*storage.ShareLink, 
 	return link, nil
 }
 
+// DeleteShare 删除分享链接。
+func (s *PhotoService) DeleteShare(id int64, userID int64) error {
+	return s.repo.DeleteShareLink(id, userID)
+}
+
 // CreateAlbum 创建相册。
 func (s *PhotoService) CreateAlbum(name, description string, userID int64) (*storage.Album, error) {
 	if name == "" {

@@ -1387,7 +1387,7 @@ function renderShareList() {
     row.querySelector('[data-del]').addEventListener('click', async e => {
       const id = parseInt(e.target.dataset.del);
       try {
-        await api.del(`/api/shares/${id}`);
+		await api.del(`/api/media/shares/${id}`);
         // 从 shareMap 移除
         const key2 = `${_shareListTarget.type}:${_shareListTarget.targetId}`;
         state.shareMap[key2] = (state.shareMap[key2] || []).filter(x => x.id !== id);

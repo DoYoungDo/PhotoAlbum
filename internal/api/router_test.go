@@ -27,6 +27,7 @@ type stubRegistrar struct {
 	createAlbum             func(name, description string, userID int64) (*storage.Album, error)
 	createShare             func(input service.CreateShareInput) (*storage.ShareLink, error)
 	deleteAlbum             func(id int64, userID int64) error
+	deleteShare             func(id int64, userID int64) error
 	getAlbum                func(id int64, userID int64) (*storage.Album, error)
 	getAlbumDownloadEntries func(albumID int64, userID int64) (string, []service.DownloadEntry, error)
 	listAlbums              func(userID int64) ([]*storage.Album, error)
@@ -66,6 +67,10 @@ func (s stubRegistrar) CreateShare(input service.CreateShareInput) (*storage.Sha
 
 func (s stubRegistrar) DeleteAlbum(id int64, userID int64) error {
 	return s.deleteAlbum(id, userID)
+}
+
+func (s stubRegistrar) DeleteShare(id int64, userID int64) error {
+	return s.deleteShare(id, userID)
 }
 
 func (s stubRegistrar) UpdateAlbum(id int64, name, description string, coverPhotoID *int64, userID int64) (*storage.Album, error) {
@@ -154,6 +159,8 @@ func okRegistrar() stubRegistrar {
 	}, createShare: func(input service.CreateShareInput) (*storage.ShareLink, error) {
 		return &storage.ShareLink{ID: 3, Token: "new-token", Type: input.Type, TargetID: input.TargetID, CreatedBy: input.UserID, ExpiresAt: input.ExpiresAt, CreatedAt: time.Now()}, nil
 	}, deleteAlbum: func(id int64, userID int64) error {
+		return nil
+	}, deleteShare: func(id int64, userID int64) error {
 		return nil
 	}, getAlbum: func(id int64, userID int64) (*storage.Album, error) {
 		coverID := int64(12)
@@ -934,6 +941,69 @@ func TestCreateShareMedia_Success(t *testing.T) {
 	}
 	if link.ID != 3 || link.Token != "new-token" {
 		t.Fatalf("创建分享响应不正确: %+v", link)
+	}
+}
+
+func TestDeleteShareMedia_RequiresAuth(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodDelete, "/api/media/shares/3", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("期望 401，得到 %d", w.Code)
+	}
+}
+
+func TestDeleteShareMedia_Success(t *testing.T) {
+	called := false
+	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+		addPhoto:                okRegistrar().addPhoto,
+		createAlbum:             okRegistrar().createAlbum,
+		createShare:             okRegistrar().createShare,
+		deleteAlbum:             okRegistrar().deleteAlbum,
+		deleteShare:             func(id int64, userID int64) error { called = true; return nil },
+		getAlbum:                okRegistrar().getAlbum,
+		getAlbumDownloadEntries: okRegistrar().getAlbumDownloadEntries,
+		listAlbums:              okRegistrar().listAlbums,
+		listShares:              okRegistrar().listShares,
+		removePhoto:             okRegistrar().removePhoto,
+		updateAlbum:             okRegistrar().updateAlbum,
+		register:                okRegistrar().register,
+		deletePhoto:             okRegistrar().deletePhoto,
+		emptyTrash:              okRegistrar().emptyTrash,
+		getDownloadEntries:      okRegistrar().getDownloadEntries,
+		getAlbumMedia:           okRegistrar().getAlbumMedia,
+		getPhoto:                okRegistrar().getPhoto,
+		getByUUID:               okRegistrar().getByUUID,
+		getTrash:                okRegistrar().getTrash,
+		getTimeline:             okRegistrar().getTimeline,
+		mediaPath:               okRegistrar().mediaPath,
+		permanentlyDeletePhoto:  okRegistrar().permanentlyDeletePhoto,
+		posterPath:              okRegistrar().posterPath,
+		restorePhoto:            okRegistrar().restorePhoto,
+	})
+	req := httptest.NewRequest(http.MethodDelete, "/api/media/shares/3", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, testConfig().JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	if !called {
+		t.Fatal("应调用删除分享逻辑")
+	}
+	var resp struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("解析删除分享响应失败: %v", err)
+	}
+	if resp.Message != "分享链接已删除" {
+		t.Fatalf("删除分享响应不正确: %+v", resp)
 	}
 }
 

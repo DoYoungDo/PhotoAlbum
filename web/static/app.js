@@ -1104,10 +1104,10 @@ async function uploadFile(file, id, job) {
   if (file.lastModified) {
     fd.append('client_last_modified_ms', String(file.lastModified));
   }
-  try {
-    await new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', isVideo ? '/api/media/upload' : '/api/photos/upload');
+	try {
+		await new Promise((resolve, reject) => {
+			const xhr = new XMLHttpRequest();
+			xhr.open('POST', '/api/media/upload');
       xhr.upload.onprogress = e => { if (prog && e.lengthComputable) prog.style.width = (e.loaded / e.total * 100) + '%'; };
       xhr.onload = () => { if (xhr.status === 201) resolve(); else { try { reject(JSON.parse(xhr.responseText)); } catch { reject({ error: xhr.statusText }); } } };
       xhr.onerror = () => reject({ error: '网络错误' });

@@ -50,6 +50,7 @@ type videoRegistrar interface {
 	PermanentlyDeletePhoto(id int64, userID int64) error
 	RestorePhoto(id int64, userID int64) error
 	GetTimeline(params storage.ListPhotosParams) (*storage.PhotoPage, error)
+	Upload(input service.UploadInput) (*service.UploadResult, error)
 	MediaPath(photo *storage.Photo) string
 	PosterPath(photo *storage.Photo) string
 	ThumbnailPath(photo *storage.Photo) string
@@ -955,15 +956,20 @@ func handleUploadPlaceholder(cfg *config.Config, registrar videoRegistrar) gin.H
 			return
 		}
 		file, err := c.FormFile("media")
+		isVideoUpload := true
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 media 文件字段"})
+			file, err = c.FormFile("photo")
+			isVideoUpload = false
+		}
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "缺少媒体文件字段"})
 			return
 		}
 		if file.Size <= 0 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "上传文件不能为空"})
 			return
 		}
-		if !strings.EqualFold(filepath.Ext(file.Filename), ".mp4") {
+		if isVideoUpload && !strings.EqualFold(filepath.Ext(file.Filename), ".mp4") {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "当前仅支持 mp4 视频上传"})
 			return
 		}
@@ -982,7 +988,37 @@ func handleUploadPlaceholder(cfg *config.Config, registrar videoRegistrar) gin.H
 			return
 		}
 
-		tempPath, err := saveUploadedMedia(cfg.StoragePath, file.Filename, io.MultiReader(bytes.NewReader(header[:n]), src))
+		payload := append([]byte(nil), header[:n]...)
+		rest, err := io.ReadAll(src)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "读取上传文件失败"})
+			return
+		}
+		payload = append(payload, rest...)
+
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+
+		if !isVideoUpload {
+			result, err := registrar.Upload(service.UploadInput{
+				Reader:       bytes.NewReader(payload),
+				OriginalName: file.Filename,
+				Size:         file.Size,
+				UploadedBy:   userID,
+				FileModTime:  time.Now(),
+			})
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				return
+			}
+			c.JSON(http.StatusCreated, result.Photo)
+			return
+		}
+
+		tempPath, err := saveUploadedMedia(cfg.StoragePath, file.Filename, bytes.NewReader(payload))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -995,13 +1031,6 @@ func handleUploadPlaceholder(cfg *config.Config, registrar videoRegistrar) gin.H
 		if err := os.Rename(tempPath, finalPath); err != nil {
 			_ = os.Remove(tempPath)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "移动媒体文件失败"})
-			return
-		}
-
-		userID, err := currentUserID(cfg, currentUsername(c))
-		if err != nil {
-			_ = os.Remove(finalPath)
-			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 			return
 		}
 

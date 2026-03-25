@@ -36,6 +36,7 @@ type stubRegistrar struct {
 	removePhoto             func(albumID int64, photoID int64, userID int64) error
 	updateAlbum             func(id int64, name, description string, coverPhotoID *int64, userID int64) (*storage.Album, error)
 	register                func(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
+	upload                  func(input service.UploadInput) (*service.UploadResult, error)
 	deletePhoto             func(id int64, userID int64) error
 	emptyTrash              func(userID int64) error
 	getDownloadEntries      func(photoIDs []int64, userID int64) ([]service.DownloadEntry, error)
@@ -53,6 +54,10 @@ type stubRegistrar struct {
 
 func (s stubRegistrar) RegisterUploadedVideo(input service.RegisterUploadedVideoInput) (*storage.Photo, error) {
 	return s.register(input)
+}
+
+func (s stubRegistrar) Upload(input service.UploadInput) (*service.UploadResult, error) {
+	return s.upload(input)
 }
 
 func (s stubRegistrar) AddPhoto(albumID int64, photoID int64, userID int64) error {
@@ -215,6 +220,8 @@ func okRegistrar() stubRegistrar {
 			TakenAt:      input.TakenAt,
 			UploadedAt:   time.Now(),
 		}, nil
+	}, upload: func(input service.UploadInput) (*service.UploadResult, error) {
+		return &service.UploadResult{Photo: &storage.Photo{ID: 101, UUID: "image-uuid", OriginalName: input.OriginalName, MediaKind: storage.MediaKindImage, MimeType: "image/jpeg", UploadedBy: input.UploadedBy}}, nil
 	}, deletePhoto: func(id int64, userID int64) error {
 		return nil
 	}, emptyTrash: func(userID int64) error {
@@ -2101,6 +2108,45 @@ func TestUploadPlaceholder_CleansFileWhenRegisterFails(t *testing.T) {
 		if strings.HasSuffix(entry.Name(), ".mp4") {
 			t.Fatalf("注册失败后不应残留视频文件: %s", entry.Name())
 		}
+	}
+}
+
+func TestUploadPlaceholder_AcceptsPhotoFieldAndReturnsImageRecord(t *testing.T) {
+	cfg := testConfig()
+	cfg.StoragePath = t.TempDir()
+	router := NewRouter(cfg, http.NotFoundHandler(), okRegistrar())
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("photo", "demo.jpg")
+	if err != nil {
+		t.Fatalf("创建表单文件失败: %v", err)
+	}
+	if _, err := part.Write([]byte("fake-jpeg-data")); err != nil {
+		t.Fatalf("写入表单文件失败: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("关闭 multipart writer 失败: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/media/upload", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, cfg.JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("期望 201，得到 %d，body=%s", w.Code, w.Body.String())
+	}
+	var photo struct {
+		ID        int64  `json:"id"`
+		UUID      string `json:"uuid"`
+		MediaKind string `json:"media_kind"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &photo); err != nil {
+		t.Fatalf("解析图片上传响应失败: %v", err)
+	}
+	if photo.ID != 101 || photo.MediaKind != storage.MediaKindImage || photo.UUID != "image-uuid" {
+		t.Fatalf("图片上传返回不正确: %+v", photo)
 	}
 }
 

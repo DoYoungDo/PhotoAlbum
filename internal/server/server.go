@@ -73,7 +73,6 @@ func (s *Server) registerRoutes() {
 	// 图片 API
 	s.mux.HandleFunc("GET /api/photos", s.auth(s.handleListPhotos))
 	s.mux.HandleFunc("POST /api/photos/upload", s.auth(s.handleUploadPhoto))
-	s.mux.HandleFunc("POST /api/photos/download", s.auth(s.handleDownloadPhotos))
 
 }
 

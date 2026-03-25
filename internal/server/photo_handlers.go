@@ -159,37 +159,6 @@ func contentDispositionAttachment(filename string) string {
 	return fmt.Sprintf("attachment; filename=%q; filename*=UTF-8''%s", trimmed, url.PathEscape(trimmed))
 }
 
-func (s *Server) handleDownloadPhotos(w http.ResponseWriter, r *http.Request) {
-	userID := s.mustUserID(w, r)
-	if userID == 0 {
-		return
-	}
-
-	var req photoDownloadRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "无效的请求体")
-		return
-	}
-	if len(req.PhotoIDs) == 0 {
-		writeError(w, http.StatusBadRequest, "photo_ids 不能为空")
-		return
-	}
-
-	entries, err := s.photoService.GetDownloadEntries(req.PhotoIDs, userID)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	zipName := time.Now().Format("photoalbum-selection-20060102-150405.zip")
-	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", contentDispositionAttachment(zipName))
-	if err := writeZipResponse(w, entries); err != nil {
-		writeError(w, http.StatusInternalServerError, "打包下载失败")
-		return
-	}
-}
-
 func (s *Server) handleServePhoto(w http.ResponseWriter, r *http.Request) {
 	userID := s.mustUserID(w, r)
 	if userID == 0 {

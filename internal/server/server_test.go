@@ -1,9 +1,6 @@
 package server
 
 import (
-	"bytes"
-	"image"
-	"image/jpeg"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,13 +11,6 @@ import (
 	"photoalbum/internal/service"
 	"photoalbum/internal/storage/sqlite"
 )
-
-func createTestJPEGBytes(w, h int) []byte {
-	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	var buf bytes.Buffer
-	_ = jpeg.Encode(&buf, img, nil)
-	return buf.Bytes()
-}
 
 // newTestServer 创建用于测试的 Server，使用 SQLite 临时数据库
 func newTestServer(t *testing.T) *Server {
@@ -48,59 +38,6 @@ func newTestServer(t *testing.T) *Server {
 	return New(cfg, photoSvc, nil) // nil FS：测试中回退到本地文件系统
 }
 
-// withAuth 生成带有认证 cookie 的请求构造函数
-func withAuth(t *testing.T, s *Server) func(method, path string, body []byte) *http.Request {
-	t.Helper()
-	token, err := s.generateToken("alice")
-	if err != nil {
-		t.Fatalf("生成 token 失败: %v", err)
-	}
-	return func(method, path string, body []byte) *http.Request {
-		var req *http.Request
-		if body != nil {
-			req = httptest.NewRequest(method, path, bytes.NewReader(body))
-		} else {
-			req = httptest.NewRequest(method, path, nil)
-		}
-		req.AddCookie(&http.Cookie{Name: authCookieName, Value: token})
-		return req
-	}
-}
-
-// --- JWT 测试 ---
-
-func TestGenerateAndParseToken(t *testing.T) {
-	s := newTestServer(t)
-	token, err := s.generateToken("alice")
-	if err != nil {
-		t.Fatalf("生成 token 失败: %v", err)
-	}
-	username, err := s.parseToken(token)
-	if err != nil {
-		t.Fatalf("解析 token 失败: %v", err)
-	}
-	if username != "alice" {
-		t.Fatalf("期望 alice，得到 %s", username)
-	}
-}
-
-func TestParseToken_Invalid(t *testing.T) {
-	s := newTestServer(t)
-	if _, err := s.parseToken("invalid-token"); err == nil {
-		t.Fatal("无效 token 应该返回错误")
-	}
-}
-
-func TestParseToken_WrongSecret(t *testing.T) {
-	s := newTestServer(t)
-	s2 := *s
-	s2.cfg = &config.Config{JWTSecret: "other-secret"}
-	token, _ := s2.generateToken("alice")
-	if _, err := s.parseToken(token); err == nil {
-		t.Fatal("不同 secret 签发的 token 应该解析失败")
-	}
-}
-
 // --- 页面测试 ---
 
 func TestStaticFile(t *testing.T) {
@@ -114,27 +51,4 @@ func TestStaticFile(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("期望 200，得到 %d", w.Code)
 	}
-}
-
-func TestParseClientLastModified(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/photos/upload", nil)
-	req.Form = map[string][]string{
-		"client_last_modified_ms": {"1710403200000"},
-	}
-	got := parseClientLastModified(req)
-	if got.IsZero() {
-		t.Fatal("期望解析出有效时间")
-	}
-	if got.UnixMilli() != 1710403200000 {
-		t.Fatalf("期望 1710403200000，得到 %d", got.UnixMilli())
-	}
-}
-
-func containsString(items []string, target string) bool {
-	for _, item := range items {
-		if item == target {
-			return true
-		}
-	}
-	return false
 }

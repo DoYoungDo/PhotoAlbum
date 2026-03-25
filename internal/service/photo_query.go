@@ -71,6 +71,11 @@ func (s *PhotoService) UpdateAlbum(id int64, name, description string, coverPhot
 	return album, nil
 }
 
+// DeleteAlbum 删除相册。
+func (s *PhotoService) DeleteAlbum(id int64, userID int64) error {
+	return s.repo.DeleteAlbum(id, userID)
+}
+
 // GetAlbumDownloadEntries 获取相册下载条目。
 func (s *PhotoService) GetAlbumDownloadEntries(albumID int64, userID int64) (string, []DownloadEntry, error) {
 	album, err := s.repo.GetAlbumByID(albumID, userID)

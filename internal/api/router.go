@@ -29,6 +29,7 @@ const tempMediaDirName = ".media-upload-tmp"
 type videoRegistrar interface {
 	AddPhoto(albumID int64, photoID int64, userID int64) error
 	CreateAlbum(name, description string, userID int64) (*storage.Album, error)
+	DeleteAlbum(id int64, userID int64) error
 	GetAlbum(id int64, userID int64) (*storage.Album, error)
 	GetAlbumDownloadEntries(albumID int64, userID int64) (string, []service.DownloadEntry, error)
 	ListAlbums(userID int64) ([]*storage.Album, error)
@@ -94,6 +95,7 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 		media.GET("/albums/:id", authMiddleware(cfg), handleListAlbumMedia(cfg, registrar))
 		media.POST("/albums/:id", authMiddleware(cfg), handleAddMediaToAlbum(cfg, registrar))
 		media.PUT("/albums/:id", authMiddleware(cfg), handleUpdateAlbumMedia(cfg, registrar))
+		media.DELETE("/albums/:id", authMiddleware(cfg), handleDeleteAlbumMedia(cfg, registrar))
 		media.DELETE("/albums/:id/:mediaId", authMiddleware(cfg), handleRemoveMediaFromAlbum(cfg, registrar))
 		media.GET("", authMiddleware(cfg), handleListMedia(cfg, registrar))
 		media.GET("/trash", authMiddleware(cfg), handleListTrashMedia(cfg, registrar))
@@ -448,6 +450,30 @@ func handleUpdateAlbumMedia(cfg *config.Config, registrar videoRegistrar) gin.Ha
 			return
 		}
 		c.JSON(http.StatusOK, album)
+	}
+}
+
+func handleDeleteAlbumMedia(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		userID, err := currentUserID(cfg, currentUsername(c))
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+			return
+		}
+		albumID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		if err != nil || albumID <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "相册ID 无效"})
+			return
+		}
+		if err := registrar.DeleteAlbum(albumID, userID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"message": "相册已删除"})
 	}
 }
 

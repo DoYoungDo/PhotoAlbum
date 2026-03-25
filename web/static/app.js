@@ -611,7 +611,7 @@ async function renderAlbumDetail() {
   $('#delete-album-btn').addEventListener('click', async () => {
     if (!confirm(`确定要删除相册「${album.name}」吗？照片/视频本身不会被删除。`)) return;
     try {
-      await api.del(`/api/albums/${album.id}`);
+		await api.del(`/api/media/albums/${album.id}`);
       state.currentAlbum = null;
       switchView('albums');
     } catch (e) {

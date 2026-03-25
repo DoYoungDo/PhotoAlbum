@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -106,10 +107,16 @@ type Claims struct {
 // 当前阶段仅为后续媒体能力预留 Gin 路由组，
 // 其余现有功能继续回退到 legacy handler。
 func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar) http.Handler {
+	return NewRouterWithStatic(cfg, legacy, nil, registrar)
+}
+
+func NewRouterWithStatic(cfg *config.Config, legacy http.Handler, staticFS fs.FS, registrar videoRegistrar) http.Handler {
 	gin.SetMode(gin.ReleaseMode)
 
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
+
+	r.GET("/static/*filepath", gin.WrapH(buildStaticHandler(staticFS)))
 
 	r.GET("/", pageAuthMiddleware(cfg), handleAppPage())
 	r.GET("/albums", pageAuthMiddleware(cfg), handleAppPage())
@@ -160,6 +167,16 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 	r.NoMethod(legacyHandler)
 
 	return r
+}
+
+func buildStaticHandler(staticFS fs.FS) http.Handler {
+	if staticFS != nil {
+		sub, err := fs.Sub(staticFS, "web/static")
+		if err == nil {
+			return http.StripPrefix("/static/", http.FileServer(http.FS(sub)))
+		}
+	}
+	return http.StripPrefix("/static/", http.FileServer(http.Dir("web/static")))
 }
 
 func handleLogin(cfg *config.Config) gin.HandlerFunc {

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -1970,6 +1971,22 @@ func TestNewRouter_FallsBackToLegacyHandler(t *testing.T) {
 
 	if w.Code != http.StatusTeapot {
 		t.Fatalf("期望 418，得到 %d", w.Code)
+	}
+}
+
+func TestNewRouterWithStatic_ServesLocalStaticFile(t *testing.T) {
+	staticFS := fstest.MapFS{"web/static/app.css": {Data: []byte(":root{--bg:#fff;}")}}
+	router := NewRouterWithStatic(testConfig(), http.NotFoundHandler(), staticFS, okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/static/app.css", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "--bg") {
+		t.Fatalf("静态文件内容不正确")
 	}
 }
 

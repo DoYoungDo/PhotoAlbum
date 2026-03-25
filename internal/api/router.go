@@ -125,6 +125,7 @@ func NewRouter(cfg *config.Config, legacy http.Handler, registrar videoRegistrar
 	r.GET("/media/files/:uuid", authMiddleware(cfg), handleServeMediaFile(cfg, registrar))
 	r.GET("/media/posters/:uuid", authMiddleware(cfg), handleServePoster(cfg, registrar))
 	r.GET("/api/s/:token", handleGetShareByToken(cfg, registrar))
+	r.GET("/api/s/:token/photos", handleGetSharedAlbumMedia(cfg, registrar))
 
 	legacyHandler := gin.WrapH(legacy)
 	r.NoRoute(legacyHandler)
@@ -562,6 +563,35 @@ func handleGetShareByToken(cfg *config.Config, registrar videoRegistrar) gin.Han
 			return
 		}
 		c.JSON(http.StatusOK, link)
+	}
+}
+
+func handleGetSharedAlbumMedia(cfg *config.Config, registrar videoRegistrar) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if registrar == nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "媒体服务未配置"})
+			return
+		}
+		link, err := registrar.GetShareByToken(c.Param("token"))
+		if err != nil || link == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "分享链接不存在或已过期"})
+			return
+		}
+		if link.Type != storage.ShareTypeAlbum {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "当前分享不是相册类型"})
+			return
+		}
+		page, err := registrar.GetAlbumMedia(storage.ListAlbumPhotosParams{
+			AlbumID: link.TargetID,
+			UserID:  link.CreatedBy,
+			Cursor:  c.Query("cursor"),
+			Limit:   30,
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, page)
 	}
 }
 

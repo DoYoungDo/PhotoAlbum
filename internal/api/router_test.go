@@ -1051,6 +1051,82 @@ func TestGetShareByToken_Success(t *testing.T) {
 	}
 }
 
+func TestGetSharedAlbumMedia_NotFound(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/api/s/missing/photos", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("期望 404，得到 %d", w.Code)
+	}
+}
+
+func TestGetSharedAlbumMedia_BadType(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/api/s/token-1/photos", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("期望 400，得到 %d", w.Code)
+	}
+}
+
+func TestGetSharedAlbumMedia_Success(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), stubRegistrar{
+		addPhoto:                okRegistrar().addPhoto,
+		createAlbum:             okRegistrar().createAlbum,
+		createShare:             okRegistrar().createShare,
+		deleteAlbum:             okRegistrar().deleteAlbum,
+		deleteShare:             okRegistrar().deleteShare,
+		getAlbum:                okRegistrar().getAlbum,
+		getAlbumDownloadEntries: okRegistrar().getAlbumDownloadEntries,
+		getShareByToken: func(token string) (*storage.ShareLink, error) {
+			return &storage.ShareLink{ID: 9, Token: token, Type: storage.ShareTypeAlbum, TargetID: 8, CreatedBy: 1, CreatedAt: time.Now()}, nil
+		},
+		listAlbums:             okRegistrar().listAlbums,
+		listShares:             okRegistrar().listShares,
+		removePhoto:            okRegistrar().removePhoto,
+		updateAlbum:            okRegistrar().updateAlbum,
+		register:               okRegistrar().register,
+		deletePhoto:            okRegistrar().deletePhoto,
+		emptyTrash:             okRegistrar().emptyTrash,
+		getDownloadEntries:     okRegistrar().getDownloadEntries,
+		getAlbumMedia:          okRegistrar().getAlbumMedia,
+		getPhoto:               okRegistrar().getPhoto,
+		getByUUID:              okRegistrar().getByUUID,
+		getTrash:               okRegistrar().getTrash,
+		getTimeline:            okRegistrar().getTimeline,
+		mediaPath:              okRegistrar().mediaPath,
+		permanentlyDeletePhoto: okRegistrar().permanentlyDeletePhoto,
+		posterPath:             okRegistrar().posterPath,
+		restorePhoto:           okRegistrar().restorePhoto,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/s/album-token/photos", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	var page struct {
+		Photos []struct {
+			ID        int64  `json:"id"`
+			MediaKind string `json:"media_kind"`
+		} `json:"photos"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
+		t.Fatalf("解析分享相册内容响应失败: %v", err)
+	}
+	if len(page.Photos) != 2 || page.Photos[1].MediaKind != storage.MediaKindVideo {
+		t.Fatalf("分享相册内容响应不正确: %+v", page)
+	}
+}
+
 func TestDownloadAlbumMedia_RequiresAuth(t *testing.T) {
 	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
 	req := httptest.NewRequest(http.MethodGet, "/api/media/albums/1/download", nil)

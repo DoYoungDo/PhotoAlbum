@@ -33,6 +33,43 @@ func (s *PhotoService) ListAlbums(userID int64) ([]*storage.Album, error) {
 	return s.repo.ListAlbums(userID)
 }
 
+// GetAlbumDownloadEntries 获取相册下载条目。
+func (s *PhotoService) GetAlbumDownloadEntries(albumID int64, userID int64) (string, []DownloadEntry, error) {
+	album, err := s.repo.GetAlbumByID(albumID, userID)
+	if err != nil {
+		return "", nil, err
+	}
+	if album == nil {
+		return "", nil, fmt.Errorf("相册不存在")
+	}
+
+	page, err := s.repo.ListAlbumPhotos(storage.ListAlbumPhotosParams{
+		AlbumID: albumID,
+		UserID:  userID,
+		Limit:   10000,
+	})
+	if err != nil {
+		return "", nil, err
+	}
+
+	entries := make([]DownloadEntry, 0, len(page.Photos))
+	usedNames := map[string]int{}
+	for _, photo := range page.Photos {
+		name := makeUniqueDownloadName(photo.OriginalName, usedNames)
+		entries = append(entries, DownloadEntry{
+			FileName: name,
+			Path:     s.PhotoPath(photo),
+			MimeType: photo.MimeType,
+		})
+	}
+
+	albumName := album.Name
+	if albumName == "" {
+		albumName = "album"
+	}
+	return albumName, entries, nil
+}
+
 // AddPhoto 将媒体添加到相册。
 func (s *PhotoService) AddPhoto(albumID int64, photoID int64, userID int64) error {
 	return s.repo.AddPhotoToAlbum(albumID, photoID, userID)

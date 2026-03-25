@@ -604,7 +604,7 @@ async function renderAlbumDetail() {
   $('#topbar-actions').innerHTML = `<button class="btn btn-sm" id="download-album-btn">下载相册</button><button class="btn btn-danger btn-sm" id="delete-album-btn">删除相册</button><button class="btn btn-sm" id="back-albums-btn">← 返回相册</button>`;
   $('#download-album-btn').addEventListener('click', () => {
     withButtonBusy($('#download-album-btn'), '打包中…', async () => {
-      triggerDownload(`/api/albums/${album.id}/download`);
+		triggerDownload(`/api/media/albums/${album.id}/download`);
       await new Promise(resolve => setTimeout(resolve, 600));
     });
   });

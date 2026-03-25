@@ -23,23 +23,24 @@ import (
 )
 
 type stubRegistrar struct {
-	addPhoto               func(albumID int64, photoID int64, userID int64) error
-	getAlbum               func(id int64, userID int64) (*storage.Album, error)
-	listAlbums             func(userID int64) ([]*storage.Album, error)
-	removePhoto            func(albumID int64, photoID int64, userID int64) error
-	register               func(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
-	deletePhoto            func(id int64, userID int64) error
-	emptyTrash             func(userID int64) error
-	getDownloadEntries     func(photoIDs []int64, userID int64) ([]service.DownloadEntry, error)
-	getAlbumMedia          func(params storage.ListAlbumPhotosParams) (*storage.PhotoPage, error)
-	getPhoto               func(id int64, userID int64) (*storage.Photo, error)
-	getByUUID              func(uuid string, userID int64) (*storage.Photo, error)
-	getTrash               func(params storage.ListPhotosParams) (*storage.PhotoPage, error)
-	getTimeline            func(params storage.ListPhotosParams) (*storage.PhotoPage, error)
-	mediaPath              func(photo *storage.Photo) string
-	permanentlyDeletePhoto func(id int64, userID int64) error
-	posterPath             func(photo *storage.Photo) string
-	restorePhoto           func(id int64, userID int64) error
+	addPhoto                func(albumID int64, photoID int64, userID int64) error
+	getAlbum                func(id int64, userID int64) (*storage.Album, error)
+	getAlbumDownloadEntries func(albumID int64, userID int64) (string, []service.DownloadEntry, error)
+	listAlbums              func(userID int64) ([]*storage.Album, error)
+	removePhoto             func(albumID int64, photoID int64, userID int64) error
+	register                func(input service.RegisterUploadedVideoInput) (*storage.Photo, error)
+	deletePhoto             func(id int64, userID int64) error
+	emptyTrash              func(userID int64) error
+	getDownloadEntries      func(photoIDs []int64, userID int64) ([]service.DownloadEntry, error)
+	getAlbumMedia           func(params storage.ListAlbumPhotosParams) (*storage.PhotoPage, error)
+	getPhoto                func(id int64, userID int64) (*storage.Photo, error)
+	getByUUID               func(uuid string, userID int64) (*storage.Photo, error)
+	getTrash                func(params storage.ListPhotosParams) (*storage.PhotoPage, error)
+	getTimeline             func(params storage.ListPhotosParams) (*storage.PhotoPage, error)
+	mediaPath               func(photo *storage.Photo) string
+	permanentlyDeletePhoto  func(id int64, userID int64) error
+	posterPath              func(photo *storage.Photo) string
+	restorePhoto            func(id int64, userID int64) error
 }
 
 func (s stubRegistrar) RegisterUploadedVideo(input service.RegisterUploadedVideoInput) (*storage.Photo, error) {
@@ -52,6 +53,10 @@ func (s stubRegistrar) AddPhoto(albumID int64, photoID int64, userID int64) erro
 
 func (s stubRegistrar) GetAlbum(id int64, userID int64) (*storage.Album, error) {
 	return s.getAlbum(id, userID)
+}
+
+func (s stubRegistrar) GetAlbumDownloadEntries(albumID int64, userID int64) (string, []service.DownloadEntry, error) {
+	return s.getAlbumDownloadEntries(albumID, userID)
 }
 
 func (s stubRegistrar) ListAlbums(userID int64) ([]*storage.Album, error) {
@@ -122,6 +127,8 @@ func okRegistrar() stubRegistrar {
 	}, getAlbum: func(id int64, userID int64) (*storage.Album, error) {
 		coverID := int64(12)
 		return &storage.Album{ID: id, Name: "旅行", Description: "相册描述", CreatedBy: userID, CoverPhotoID: &coverID, PhotoCount: 2}, nil
+	}, getAlbumDownloadEntries: func(albumID int64, userID int64) (string, []service.DownloadEntry, error) {
+		return "旅行", []service.DownloadEntry{{FileName: "album.mp4", Path: mediaFilePath(&storage.Photo{UUID: "media-1"}), MimeType: "video/mp4"}}, nil
 	}, listAlbums: func(userID int64) ([]*storage.Album, error) {
 		coverID := int64(12)
 		return []*storage.Album{
@@ -580,6 +587,73 @@ func TestListAlbumsMedia_Success(t *testing.T) {
 	}
 	if albums[0].ID != 1 || albums[1].PhotoCount != 5 {
 		t.Fatalf("相册列表响应不正确: %+v", albums)
+	}
+}
+
+func TestDownloadAlbumMedia_RequiresAuth(t *testing.T) {
+	router := NewRouter(testConfig(), http.NotFoundHandler(), okRegistrar())
+	req := httptest.NewRequest(http.MethodGet, "/api/media/albums/1/download", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("期望 401，得到 %d", w.Code)
+	}
+}
+
+func TestDownloadAlbumMedia_Success(t *testing.T) {
+	cfg := testConfig()
+	storageDir := t.TempDir()
+	cfg.StoragePath = storageDir
+	mediaFile := filepath.Join(storageDir, "album-video.mp4")
+	if err := os.WriteFile(mediaFile, []byte("album-video"), 0644); err != nil {
+		t.Fatalf("创建测试相册媒体文件失败: %v", err)
+	}
+	router := NewRouter(cfg, http.NotFoundHandler(), stubRegistrar{
+		addPhoto: func(albumID int64, photoID int64, userID int64) error { return nil },
+		getAlbum: okRegistrar().getAlbum,
+		getAlbumDownloadEntries: func(albumID int64, userID int64) (string, []service.DownloadEntry, error) {
+			return "旅行/2026", []service.DownloadEntry{{FileName: "clip.mp4", Path: mediaFile, MimeType: "video/mp4"}}, nil
+		},
+		listAlbums:             okRegistrar().listAlbums,
+		removePhoto:            okRegistrar().removePhoto,
+		register:               okRegistrar().register,
+		deletePhoto:            okRegistrar().deletePhoto,
+		emptyTrash:             okRegistrar().emptyTrash,
+		getDownloadEntries:     okRegistrar().getDownloadEntries,
+		getAlbumMedia:          okRegistrar().getAlbumMedia,
+		getPhoto:               okRegistrar().getPhoto,
+		getByUUID:              okRegistrar().getByUUID,
+		getTrash:               okRegistrar().getTrash,
+		getTimeline:            okRegistrar().getTimeline,
+		mediaPath:              okRegistrar().mediaPath,
+		permanentlyDeletePhoto: okRegistrar().permanentlyDeletePhoto,
+		posterPath:             okRegistrar().posterPath,
+		restorePhoto:           okRegistrar().restorePhoto,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/media/albums/5/download", nil)
+	req.AddCookie(&http.Cookie{Name: authCookieName, Value: testToken(t, cfg.JWTSecret, "alice")})
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("期望 200，得到 %d", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "application/zip") {
+		t.Fatalf("Content-Type 不正确: %s", ct)
+	}
+	disposition := w.Header().Get("Content-Disposition")
+	if !strings.Contains(disposition, "旅行-2026.zip") {
+		t.Fatalf("下载头不正确: %s", disposition)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(w.Body.Bytes()), int64(w.Body.Len()))
+	if err != nil {
+		t.Fatalf("解析 zip 失败: %v", err)
+	}
+	if len(zr.File) != 1 || zr.File[0].Name != "clip.mp4" {
+		t.Fatalf("zip 条目不正确: %+v", zr.File)
 	}
 }
 

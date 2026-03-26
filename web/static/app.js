@@ -32,6 +32,14 @@ const api = {
     return r.json();
   },
 };
+
+const videoPosterPlaceholder = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240">
+  <rect width="240" height="240" rx="24" fill="#1b2a2f"/>
+  <circle cx="120" cy="120" r="54" fill="#2d6a5f"/>
+  <polygon points="105,90 105,150 152,120" fill="#f4f1e8"/>
+  <text x="120" y="198" font-size="18" text-anchor="middle" fill="#d9e4dd" font-family="sans-serif">VIDEO</text>
+</svg>`)} `;
 function formatDate(iso) {
   const d = new Date(iso);
   return d.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -156,7 +164,7 @@ const state = {
 // ── 分享状态加载 ─────────────────────────────────────
 async function loadShareMap() {
   try {
-    const links = await api.get('/api/shares');
+		const links = await api.get('/api/media/shares');
     state.shareMap = {};
     (links || []).forEach(l => {
       const key = `${l.type}:${l.target_id}`;
@@ -323,7 +331,7 @@ async function loadMoreTimeline() {
   if (state.timelineLoading || !state.timelineHasMore) return;
   state.timelineLoading = true;
   try {
-    const url = '/api/photos' + (state.timelineCursor ? `?cursor=${encodeURIComponent(state.timelineCursor)}` : '');
+    const url = '/api/media' + (state.timelineCursor ? `?cursor=${encodeURIComponent(state.timelineCursor)}` : '');
     const page = await api.get(url);
     state.photos.push(...(page.photos || []));
     state.timelineCursor = page.next_cursor || '';
@@ -341,7 +349,7 @@ function renderTimelineGroups(newPhotos, offset) {
   const container = $('#timeline-groups');
   if (!container) return;
   if (offset === 0 && newPhotos.length === 0) {
-    container.innerHTML = `<div class="empty">${icons.photo}<p>还没有照片，点击右上角上传吧</p></div>`;
+    container.innerHTML = `<div class="empty">${icons.photo}<p>还没有媒体，点击右上角上传吧</p></div>`;
     return;
   }
   const groups = groupByDate(newPhotos);
@@ -359,16 +367,41 @@ function renderTimelineGroups(newPhotos, offset) {
   }
 }
 
+function isVideoMedia(photo) {
+  return photo && photo.media_kind === 'video';
+}
+
+function mediaThumbURL(photo) {
+  return isVideoMedia(photo) ? videoPosterPlaceholder : `/media/thumbnails/${photo.uuid}`;
+}
+
+function mediaFileURL(photo) {
+  return isVideoMedia(photo) ? `/media/files/${photo.uuid}` : `/media/photos/${photo.uuid}`;
+}
+
+function formatDuration(durationMS) {
+  const totalSeconds = Math.max(0, Math.floor((durationMS || 0) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
 // ── 缩略图 ────────────────────────────────────────────
 function makePhotoThumb(photo, listRef, opts = {}) {
   const div = el('div', 'photo-thumb');
   div.dataset.id = photo.id;
+  div.dataset.kind = photo.media_kind || 'image';
 
   const isShared = !!state.shareMap[`photo:${photo.id}`];
   const shareBadge = isShared
     ? `<span class="share-badge">${icons.shareSmall}</span>` : '';
+  const mediaBadge = isVideoMedia(photo)
+    ? `<span class="media-badge">视频${photo.duration_ms ? ` · ${formatDuration(photo.duration_ms)}` : ''}</span>`
+    : '';
 
-  div.innerHTML = `<span class="check">${icons.check}</span><img loading="lazy" src="/media/thumbnails/${photo.uuid}" alt="${photo.original_name}">${shareBadge}`;
+  div.innerHTML = `<span class="check">${icons.check}</span><img loading="lazy" src="${mediaThumbURL(photo)}" alt="${photo.original_name}">${shareBadge}${mediaBadge}`;
 
   // b-1: 点击 .check 区域直接进入/切换选择模式
   const checkEl = div.querySelector('.check');
@@ -415,7 +448,7 @@ function showPhotoContextMenu(x, y, photo, thumbEl, listRef) {
   showContextMenu(x, y, [
     { label: isSelected ? '取消选择' : '选择（点击勾选图标可快速选择）', action: () => toggleSelect(photo.id, thumbEl) },
     { label: '查看', action: () => openLightbox(listRef, listRef.indexOf(photo)) },
-    { label: '下载', action: () => triggerDownload(`/api/photos/${photo.id}/download`) },
+    { label: '下载', action: () => triggerDownload(`/api/media/${photo.id}/download`) },
     '-',
     { label: '添加到相册…', action: () => openAlbumPickerModal([photo.id]) },
     { label: isShared ? '管理分享…' : '分享…', action: () => isShared ? openShareListModal('photo', photo.id) : openShareModal('photo', photo.id) },
@@ -437,13 +470,13 @@ async function addSinglePhotoToAlbum(photoId) {
 }
 
 async function deleteSinglePhoto(photoId) {
-  if (!confirm('确定要将这张照片移入回收站吗？')) return;
-  try { await api.del(`/api/photos/${photoId}`); switchView('timeline'); }
+  if (!confirm('确定要将这条照片/视频移入回收站吗？')) return;
+  try { await api.del(`/api/media/${photoId}`); switchView('timeline'); }
   catch(e) { alert('删除失败: ' + (e.error || e)); }
 }
 
 async function hardDeleteSinglePhoto(photoId) {
-  if (!confirm('确定要永久删除这张照片吗？此操作不可恢复。')) return;
+  if (!confirm('确定要永久删除这条照片/视频吗？此操作不可恢复。')) return;
   try { await api.del(`/api/trash/${photoId}`); switchView('trash'); }
   catch(e) { alert('删除失败: ' + (e.error || e)); }
 }
@@ -487,9 +520,9 @@ function selectAllInGroup(groupEl) {
 }
 async function deleteSelected() {
   if (!state.selected.size) return;
-  if (!confirm(`确定要删除选中的 ${state.selected.size} 张照片吗？`)) return;
+  if (!confirm(`确定要删除选中的 ${state.selected.size} 条照片/视频吗？`)) return;
   for (const id of state.selected) {
-    try { await api.del(`/api/photos/${id}`); } catch (e) { console.error(e); }
+    try { await api.del(`/api/media/${id}`); } catch (e) { console.error(e); }
   }
   clearSelection();
   switchView('timeline');
@@ -503,7 +536,7 @@ async function renderAlbums() {
 
   $('#content').innerHTML = `<div id="album-grid-wrap"></div>`;
   try {
-    state.albums = await api.get('/api/albums');
+	state.albums = await api.get('/api/media/albums');
     renderAlbumGrid();
   } catch(e) { $('#content').innerHTML = `<p style="color:var(--danger)">加载失败</p>`; }
 }
@@ -525,13 +558,13 @@ function makeAlbumCard(album) {
   const card = el('div', 'album-card');
   // c-1: 用 cover_uuid 显示封面缩略图
   const coverHtml = album.cover_uuid
-    ? `<img loading="lazy" src="/media/thumbnails/${album.cover_uuid}" alt="${album.name}">`
+    ? `<img loading="lazy" src="/media/thumbnails/${album.cover_uuid}" alt="${album.name}" onerror="this.onerror=null;this.src='${videoPosterPlaceholder}'">`
     : `<div class="album-cover-empty">${icons.photo}</div>`;
   card.innerHTML = `
 <div class="album-cover">${coverHtml}</div>
 <div class="album-info">
   <div class="album-name">${album.name}</div>
-  <div class="album-count">${album.photo_count || 0} 张</div>
+  <div class="album-count">${album.photo_count || 0} 条照片/视频</div>
 </div>`;
   card.addEventListener('click', () => openAlbumDetail(album));
   return card;
@@ -553,7 +586,7 @@ async function renderAlbumDetail() {
   let album = state.currentAlbum;
   if (!album && state.currentAlbumID) {
     try {
-      album = await api.get(`/api/albums/${state.currentAlbumID}`);
+		album = await api.get(`/api/media/albums/${state.currentAlbumID}/detail`);
       state.currentAlbum = album;
     } catch (e) {
       // 相册不存在或加载失败时回退到相册列表
@@ -571,14 +604,14 @@ async function renderAlbumDetail() {
   $('#topbar-actions').innerHTML = `<button class="btn btn-sm" id="download-album-btn">下载相册</button><button class="btn btn-danger btn-sm" id="delete-album-btn">删除相册</button><button class="btn btn-sm" id="back-albums-btn">← 返回相册</button>`;
   $('#download-album-btn').addEventListener('click', () => {
     withButtonBusy($('#download-album-btn'), '打包中…', async () => {
-      triggerDownload(`/api/albums/${album.id}/download`);
+		triggerDownload(`/api/media/albums/${album.id}/download`);
       await new Promise(resolve => setTimeout(resolve, 600));
     });
   });
   $('#delete-album-btn').addEventListener('click', async () => {
-    if (!confirm(`确定要删除相册「${album.name}」吗？图片本身不会被删除。`)) return;
+    if (!confirm(`确定要删除相册「${album.name}」吗？照片/视频本身不会被删除。`)) return;
     try {
-      await api.del(`/api/albums/${album.id}`);
+		await api.del(`/api/media/albums/${album.id}`);
       state.currentAlbum = null;
       switchView('albums');
     } catch (e) {
@@ -590,7 +623,7 @@ async function renderAlbumDetail() {
   $('#content').innerHTML = `
 <div class="toolbar">
   <span id="sel-bar" class="selected-bar">
-    <span class="selected-count" id="sel-count">0</span> 张已选
+    <span class="selected-count" id="sel-count">0</span> 条已选
     <button class="btn btn-sm" style="background:rgba(255,255,255,.2);border-color:transparent;color:#fff" id="download-sel-btn">下载选中</button>
     <button class="btn btn-sm" style="background:rgba(255,255,255,.2);border-color:transparent;color:#fff" id="add-to-album-btn">${icons.album} 添加到相册</button>
     <button class="btn btn-sm" style="background:rgba(255,255,255,.2);border-color:transparent;color:#fff" id="delete-sel-btn">${icons.trash} 删除</button>
@@ -609,10 +642,10 @@ async function renderAlbumDetail() {
 async function loadMoreAlbumPhotos() {
   if (state.albumLoading || !state.albumHasMore || !state.currentAlbum) return;
   state.albumLoading = true;
-  try {
-    const id = state.currentAlbum.id;
-    const url = `/api/albums/${id}/photos` + (state.albumCursor ? `?cursor=${encodeURIComponent(state.albumCursor)}` : '');
-    const page = await api.get(url);
+	try {
+		const id = state.currentAlbum.id;
+		const url = `/api/media/albums/${id}` + (state.albumCursor ? `?cursor=${encodeURIComponent(state.albumCursor)}` : '');
+		const page = await api.get(url);
     state.albumPhotos.push(...(page.photos || []));
     state.albumCursor = page.next_cursor || '';
     state.albumHasMore = page.has_more || false;
@@ -628,7 +661,7 @@ function renderAlbumGroups(newPhotos) {
   const container = $('#album-groups');
   if (!container) return;
   if (state.albumPhotos.length === 0 && newPhotos.length === 0) {
-    container.innerHTML = `<div class="empty">${icons.photo}<p>相册还没有照片</p></div>`;
+    container.innerHTML = `<div class="empty">${icons.photo}<p>相册里还没有照片/视频</p></div>`;
     return;
   }
   const groups = groupByDate(newPhotos);
@@ -656,7 +689,7 @@ async function renderTrash() {
   $('#content').innerHTML = `
 <div class="toolbar">
   <span id="trash-sel-bar" class="selected-bar">
-    <span class="selected-count" id="trash-sel-count">0</span> 张已选
+    <span class="selected-count" id="trash-sel-count">0</span> 条已选
     <button class="btn btn-sm" style="background:rgba(255,255,255,.2);border-color:transparent;color:#fff" id="restore-sel-btn">${icons.prev} 批量恢复</button>
     <button class="btn btn-sm" style="background:rgba(255,255,255,.2);border-color:transparent;color:#fff" id="hard-delete-sel-btn">${icons.trash} 批量删除</button>
     <button class="btn-icon" style="color:#fff" id="trash-clear-sel-btn">${icons.close}</button>
@@ -678,7 +711,7 @@ async function loadMoreTrash() {
   if (state.trashLoading || !state.trashHasMore) return;
   state.trashLoading = true;
   try {
-    const url = '/api/trash' + (state.trashCursor ? `?cursor=${encodeURIComponent(state.trashCursor)}` : '');
+		const url = '/api/media/trash' + (state.trashCursor ? `?cursor=${encodeURIComponent(state.trashCursor)}` : '');
     const page = await api.get(url);
     state.trashPhotos.push(...(page.photos || []));
     state.trashCursor = page.next_cursor || '';
@@ -724,12 +757,12 @@ function renderTrashGroups(newPhotos) {
   }
 }
 async function emptyTrash() {
-  if (!confirm('确定要永久删除回收站中所有照片吗？此操作不可恢复。')) return;
-  try { await api.del('/api/trash'); switchView('trash'); }
+  if (!confirm('确定要永久删除回收站中所有照片/视频吗？此操作不可恢复。')) return;
+  try { await api.del('/api/media/trash'); switchView('trash'); }
   catch(e) { alert('操作失败: ' + (e.error || e)); }
 }
 async function restorePhoto(id) {
-  try { await api.post(`/api/photos/${id}/restore`, {}); switchView('trash'); }
+  try { await api.post(`/api/media/${id}/restore`, {}); switchView('trash'); }
   catch(e) { alert('恢复失败: ' + (e.error || e)); }
 }
 
@@ -746,11 +779,11 @@ function updateTrashSelBar() {
 // c-5: 批量恢复选中图片
 async function restoreSelected() {
   if (!state.selected.size) return;
-  if (!confirm(`确定要恢复选中的 ${state.selected.size} 张照片吗？`)) return;
+  if (!confirm(`确定要恢复选中的 ${state.selected.size} 条照片/视频吗？`)) return;
   const ids = [...state.selected];
   clearSelection();
   for (const id of ids) {
-    try { await api.post(`/api/photos/${id}/restore`, {}); }
+		try { await api.post(`/api/media/${id}/restore`, {}); }
     catch(e) { console.error('恢复失败:', id, e); }
   }
   switchView('trash');
@@ -758,11 +791,11 @@ async function restoreSelected() {
 
 async function hardDeleteSelected() {
   if (!state.selected.size) return;
-  if (!confirm(`确定要永久删除选中的 ${state.selected.size} 张照片吗？此操作不可恢复。`)) return;
+  if (!confirm(`确定要永久删除选中的 ${state.selected.size} 条照片/视频吗？此操作不可恢复。`)) return;
   const ids = [...state.selected];
   clearSelection();
   for (const id of ids) {
-    try { await api.del(`/api/trash/${id}`); }
+		try { await api.del(`/api/media/trash/${id}`); }
     catch(e) { console.error('永久删除失败:', id, e); }
   }
   switchView('trash');
@@ -807,6 +840,7 @@ function renderLightbox() {
   </div>
   <div class="lightbox-body">
     <img class="lightbox-img" id="lb-img" src="" alt="">
+    <video class="lightbox-video hidden" id="lb-video" controls playsinline preload="metadata"></video>
     <button class="lb-nav lb-prev" id="lb-prev">${icons.prev}</button>
     <button class="lb-nav lb-next" id="lb-next">${icons.next}</button>
   </div>
@@ -836,23 +870,54 @@ function openLightbox(photos, index) {
   $('#lightbox').classList.add('open');
   lbRender();
 }
-function closeLightbox() { $('#lightbox').classList.remove('open'); }
+function closeLightbox() {
+  const video = $('#lb-video');
+  if (video) {
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+  }
+  $('#lightbox').classList.remove('open');
+}
 function lbNav(dir) {
   const n = state.lightboxIndex + dir;
   if (n < 0 || n >= state.lightboxPhotos.length) return;
+  const video = $('#lb-video');
+  if (video) {
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+  }
   state.lightboxIndex = n;
   lbRender();
 }
 function lbRender() {
   const p = state.lightboxPhotos[state.lightboxIndex];
   if (!p) return;
-  $('#lb-img').src = `/media/photos/${p.uuid}`;
+  const img = $('#lb-img');
+  const video = $('#lb-video');
+  if (isVideoMedia(p)) {
+    img.classList.add('hidden');
+    img.removeAttribute('src');
+    video.classList.remove('hidden');
+    video.src = mediaFileURL(p);
+    video.poster = mediaThumbURL(p);
+  } else {
+    video.pause();
+    video.classList.add('hidden');
+    video.removeAttribute('src');
+    video.load();
+    img.classList.remove('hidden');
+    img.src = mediaFileURL(p);
+  }
   $('#lb-title').textContent = p.original_name;
   $('#lb-prev').classList.toggle('hidden', state.lightboxIndex === 0);
   $('#lb-next').classList.toggle('hidden', state.lightboxIndex === state.lightboxPhotos.length - 1);
   const items = [
+    ['类型', isVideoMedia(p) ? '视频' : '图片'],
     ['拍摄时间', formatDate(p.taken_at)],
     ['尺寸', p.width && p.height ? `${p.width} × ${p.height}` : '—'],
+    ['时长', isVideoMedia(p) && p.duration_ms ? formatDuration(p.duration_ms) : '—'],
     ['大小', formatSize(p.size)],
     ['文件名', p.original_name],
   ];
@@ -917,7 +982,7 @@ function downloadCurrentPhoto() {
 	const p = state.lightboxPhotos[state.lightboxIndex];
 	if (!p) return;
 	withButtonBusy($('#lb-download'), '下载中…', async () => {
-		triggerDownload(`/api/photos/${p.id}/download`);
+		triggerDownload(`/api/media/${p.id}/download`);
 		await new Promise(resolve => setTimeout(resolve, 600));
 	});
 }
@@ -927,8 +992,8 @@ async function downloadSelected() {
 	const btn = $('#download-sel-btn');
 	try {
 		await withButtonBusy(btn, '打包中…', async () => {
-			await triggerPostDownload('/api/photos/download', {
-				photo_ids: [...state.selected],
+			await triggerPostDownload('/api/media/download', {
+				media_ids: [...state.selected],
 			}, `photoalbum-selection-${Date.now()}.zip`);
 		});
 	} catch (e) {
@@ -940,12 +1005,12 @@ async function downloadSelected() {
 function renderUploadModal() {
   return `<div class="modal-overlay" id="upload-modal">
   <div class="modal" style="width:520px">
-    <div class="modal-title">${icons.upload} 上传照片</div>
+    <div class="modal-title">${icons.upload} 上传媒体</div>
     <div class="upload-zone" id="drop-zone">
       ${icons.upload}
-      <div style="margin-top:8px">拖拽照片到这里，或点击选择文件</div>
-      <div style="font-size:.8rem;margin-top:4px">支持 JPG、PNG、GIF、WebP</div>
-      <input type="file" id="file-input" accept="image/*" multiple aria-hidden="true">
+      <div style="margin-top:8px">拖拽图片或视频到这里，或点击选择文件</div>
+      <div style="font-size:.8rem;margin-top:4px">支持 JPG、PNG、GIF、WebP、MP4</div>
+      <input type="file" id="file-input" accept="image/*,video/mp4" multiple aria-hidden="true">
     </div>
     <div class="upload-queue" id="upload-queue"></div>
     <div class="modal-footer">
@@ -992,7 +1057,7 @@ function bindUploadZone() {
   input.addEventListener('change', () => { if (input.files.length) handleFiles(input.files); });
 }
 async function handleFiles(fileList) {
-  const files = [...fileList].filter(f => f.type.startsWith('image/'));
+  const files = [...fileList].filter(f => f.type.startsWith('image/') || f.type === 'video/mp4');
   if (!files.length) return;
   const queue = $('#upload-queue');
   for (const file of files) {
@@ -1033,15 +1098,16 @@ async function uploadFile(file, id, job) {
   if (retryBtn) retryBtn.style.display = 'none';
   if (stat) { stat.textContent = '上传中'; stat.className = 'up-status'; }
   const fd = new FormData();
-  fd.append('photo', file);
+  const isVideo = file.type === 'video/mp4';
+  fd.append(isVideo ? 'media' : 'photo', file);
   // 传递浏览器 File 对象的本地最后修改时间，供后端在无 EXIF 时作为回退时间。
   if (file.lastModified) {
     fd.append('client_last_modified_ms', String(file.lastModified));
   }
-  try {
-    await new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open('POST', '/api/photos/upload');
+	try {
+		await new Promise((resolve, reject) => {
+			const xhr = new XMLHttpRequest();
+			xhr.open('POST', '/api/media/upload');
       xhr.upload.onprogress = e => { if (prog && e.lengthComputable) prog.style.width = (e.loaded / e.total * 100) + '%'; };
       xhr.onload = () => { if (xhr.status === 201) resolve(); else { try { reject(JSON.parse(xhr.responseText)); } catch { reject({ error: xhr.statusText }); } } };
       xhr.onerror = () => reject({ error: '网络错误' });
@@ -1121,7 +1187,7 @@ async function createAlbum() {
   const name = $('#album-name-input').value.trim();
   if (!name) { alert('请输入相册名称'); return; }
   try {
-    await api.post('/api/albums', { name, description: $('#album-desc-input').value.trim() });
+		await api.post('/api/media/albums', { name, description: $('#album-desc-input').value.trim() });
     $('#create-album-modal').classList.remove('open');
     // 通过 switchView 而不是直接 render，确保菜单高亮和 hash 保持一致。
     switchView('albums');
@@ -1147,7 +1213,7 @@ let _pickerPhotoIds = null;
 let _pickerSelected = null;
 
 async function openAlbumPickerModal(photoIds) {
-  // photoIds: null=用已选集合, 数组=指定图片
+	// photoIds: null=用已选集合, 数组=指定媒体
   _pickerPhotoIds = photoIds;
   _pickerSelected = null;
   const modal = $('#album-picker-modal');
@@ -1167,7 +1233,7 @@ async function openAlbumPickerModal(photoIds) {
   grid.innerHTML = '<div style="padding:16px;color:var(--text2)">加载中…</div>';
 
   try {
-    const albums = await api.get('/api/albums');
+		const albums = await api.get('/api/media/albums');
     if (!albums || !albums.length) {
       grid.innerHTML = `<div style="padding:16px;color:var(--text2)">还没有相册，请先新建相册</div>`;
       $('#album-picker-hint').textContent = '你可以直接在当前弹窗里去创建相册。';
@@ -1195,19 +1261,19 @@ async function openAlbumPickerModal(photoIds) {
 
 async function confirmAlbumPicker() {
   if (!_pickerSelected) { $('#album-picker-hint').textContent = '请先选择一个相册'; return; }
-  const album = _pickerSelected;
-  const ids = _pickerPhotoIds || [...state.selected];
-  if (!ids.length) { $('#album-picker-hint').textContent = '没有选中的图片'; return; }
+	const album = _pickerSelected;
+	const ids = _pickerPhotoIds || [...state.selected];
+	if (!ids.length) { $('#album-picker-hint').textContent = '没有选中的照片/视频'; return; }
 
-  $('#album-picker-confirm').disabled = true;
-  let ok = 0, fail = 0;
-  for (const id of ids) {
-    try { await api.post(`/api/albums/${album.id}/photos`, { photo_id: id }); ok++; }
-    catch(e) { fail++; }
-  }
+	$('#album-picker-confirm').disabled = true;
+	let ok = 0, fail = 0;
+	for (const id of ids) {
+		try { await api.post(`/api/media/albums/${album.id}`, { media_id: id }); ok++; }
+		catch(e) { fail++; }
+	}
   $('#album-picker-confirm').disabled = false;
   $('#album-picker-modal').classList.remove('open');
-  showToast(`已添加 ${ok} 张到「${album.name}」${fail ? `，${fail} 张失败` : ''}`);
+  showToast(`已添加 ${ok} 条到「${album.name}」${fail ? `，${fail} 条失败` : ''}`);
   if (_pickerPhotoIds === null) clearSelection();
 }
 
@@ -1251,7 +1317,7 @@ async function generateShareLink() {
   const body = { type: _shareTarget.type, target_id: _shareTarget.targetId };
   if (days > 0) body.expires_in_days = days;
   try {
-    const link = await api.post('/api/shares', body);
+		const link = await api.post('/api/media/shares', body);
     // 更新 shareMap
     const key = `${link.type}:${link.target_id}`;
     if (!state.shareMap[key]) state.shareMap[key] = [];
@@ -1321,7 +1387,7 @@ function renderShareList() {
     row.querySelector('[data-del]').addEventListener('click', async e => {
       const id = parseInt(e.target.dataset.del);
       try {
-        await api.del(`/api/shares/${id}`);
+		await api.del(`/api/media/shares/${id}`);
         // 从 shareMap 移除
         const key2 = `${_shareListTarget.type}:${_shareListTarget.targetId}`;
         state.shareMap[key2] = (state.shareMap[key2] || []).filter(x => x.id !== id);

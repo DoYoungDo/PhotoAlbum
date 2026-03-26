@@ -1,9 +1,10 @@
-package server
+package api
 
 import (
 	"archive/zip"
 	"io"
 	"os"
+	"strings"
 
 	"photoalbum/internal/service"
 )
@@ -32,4 +33,13 @@ func writeZipResponse(w io.Writer, entries []service.DownloadEntry) error {
 	}
 
 	return zw.Close()
+}
+
+func sanitizeZipName(name string) string {
+	replacer := strings.NewReplacer("/", "-", "\\", "-", ":", "-", "*", "-", "?", "-", "\"", "", "<", "-", ">", "-", "|", "-")
+	cleaned := strings.TrimSpace(replacer.Replace(name))
+	if cleaned == "" {
+		cleaned = "album"
+	}
+	return cleaned + ".zip"
 }

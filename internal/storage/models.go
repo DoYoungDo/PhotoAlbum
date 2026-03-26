@@ -7,16 +7,23 @@ type Photo struct {
 	ID           int64      `json:"id"`
 	UUID         string     `json:"uuid"`          // 对应磁盘文件名（不含扩展名）
 	OriginalName string     `json:"original_name"` // 用户上传时的原始文件名
+	MediaKind    string     `json:"media_kind"`    // image 或 video
 	MimeType     string     `json:"mime_type"`     // image/jpeg 等
 	Size         int64      `json:"size"`          // 文件大小（字节）
 	Width        int        `json:"width"`
 	Height       int        `json:"height"`
+	DurationMS   int64      `json:"duration_ms"`
 	TakenAt      time.Time  `json:"taken_at"` // ���摄时间（EXIF 或文件创建时间）
 	UploadedAt   time.Time  `json:"uploaded_at"`
 	UploadedBy   int64      `json:"uploaded_by"` // 关联 users.id
 	DeletedAt    *time.Time `json:"deleted_at"`  // nil 表示未删除
 	DeletedBy    *int64     `json:"deleted_by"`  // nil 表示未删除
 }
+
+const (
+	MediaKindImage = "image"
+	MediaKindVideo = "video"
+)
 
 // Album 相册模型
 type Album struct {

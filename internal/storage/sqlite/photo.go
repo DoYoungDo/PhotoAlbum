@@ -45,8 +45,8 @@ func scanPhoto(row interface {
 	var deletedBy sql.NullInt64
 
 	err := row.Scan(
-		&p.ID, &p.UUID, &p.OriginalName, &p.MimeType,
-		&p.Size, &p.Width, &p.Height,
+		&p.ID, &p.UUID, &p.OriginalName, &p.MediaKind, &p.MimeType,
+		&p.Size, &p.Width, &p.Height, &p.DurationMS,
 		&p.TakenAt, &p.UploadedAt, &p.UploadedBy,
 		&deletedAt, &deletedBy,
 	)
@@ -64,11 +64,14 @@ func scanPhoto(row interface {
 
 // SavePhoto 保存图片记录
 func (s *DB) SavePhoto(photo *storage.Photo) error {
+	if photo.MediaKind == "" {
+		photo.MediaKind = storage.MediaKindImage
+	}
 	result, err := s.db.Exec(`
-		INSERT INTO photos (uuid, original_name, mime_type, size, width, height, taken_at, uploaded_at, uploaded_by)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		photo.UUID, photo.OriginalName, photo.MimeType,
-		photo.Size, photo.Width, photo.Height,
+		INSERT INTO photos (uuid, original_name, media_kind, mime_type, size, width, height, duration_ms, taken_at, uploaded_at, uploaded_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		photo.UUID, photo.OriginalName, photo.MediaKind, photo.MimeType,
+		photo.Size, photo.Width, photo.Height, photo.DurationMS,
 		photo.TakenAt, photo.UploadedAt, photo.UploadedBy,
 	)
 	if err != nil {
@@ -85,7 +88,7 @@ func (s *DB) SavePhoto(photo *storage.Photo) error {
 // GetPhotoByID 按 ID 查询图片
 func (s *DB) GetPhotoByID(id int64, userID int64) (*storage.Photo, error) {
 	row := s.db.QueryRow(`
-		SELECT id, uuid, original_name, mime_type, size, width, height,
+		SELECT id, uuid, original_name, media_kind, mime_type, size, width, height, duration_ms,
 		       taken_at, uploaded_at, uploaded_by, deleted_at, deleted_by
 		FROM photos
 		WHERE id = ? AND uploaded_by = ? AND deleted_at IS NULL`, id, userID)
@@ -99,7 +102,7 @@ func (s *DB) GetPhotoByID(id int64, userID int64) (*storage.Photo, error) {
 // GetPhotoByIDAny 按 ID 查询图片，包含已软删除
 func (s *DB) GetPhotoByIDAny(id int64, userID int64) (*storage.Photo, error) {
 	row := s.db.QueryRow(`
-		SELECT id, uuid, original_name, mime_type, size, width, height,
+		SELECT id, uuid, original_name, media_kind, mime_type, size, width, height, duration_ms,
 		       taken_at, uploaded_at, uploaded_by, deleted_at, deleted_by
 		FROM photos
 		WHERE id = ? AND uploaded_by = ?`, id, userID)
@@ -113,7 +116,7 @@ func (s *DB) GetPhotoByIDAny(id int64, userID int64) (*storage.Photo, error) {
 // GetPhotoByUUID 按 UUID 查询图片（不含软删除）
 func (s *DB) GetPhotoByUUID(uuid string, userID int64) (*storage.Photo, error) {
 	row := s.db.QueryRow(`
-		SELECT id, uuid, original_name, mime_type, size, width, height,
+		SELECT id, uuid, original_name, media_kind, mime_type, size, width, height, duration_ms,
 		       taken_at, uploaded_at, uploaded_by, deleted_at, deleted_by
 		FROM photos
 		WHERE uuid = ? AND uploaded_by = ? AND deleted_at IS NULL`, uuid, userID)
@@ -127,7 +130,7 @@ func (s *DB) GetPhotoByUUID(uuid string, userID int64) (*storage.Photo, error) {
 // GetPhotoByUUIDAny 按 UUID 查询图片，包含已软删除（用于文件服务回收站图片）
 func (s *DB) GetPhotoByUUIDAny(uuid string, userID int64) (*storage.Photo, error) {
 	row := s.db.QueryRow(`
-		SELECT id, uuid, original_name, mime_type, size, width, height,
+		SELECT id, uuid, original_name, media_kind, mime_type, size, width, height, duration_ms,
 		       taken_at, uploaded_at, uploaded_by, deleted_at, deleted_by
 		FROM photos
 		WHERE uuid = ? AND uploaded_by = ?`, uuid, userID)
@@ -150,7 +153,7 @@ func (s *DB) ListPhotos(params storage.ListPhotosParams) (*storage.PhotoPage, er
 
 	if params.Cursor == "" {
 		rows, err = s.db.Query(`
-			SELECT id, uuid, original_name, mime_type, size, width, height,
+			SELECT id, uuid, original_name, media_kind, mime_type, size, width, height, duration_ms,
 			       taken_at, uploaded_at, uploaded_by, deleted_at, deleted_by
 			FROM photos
 			WHERE uploaded_by = ? AND deleted_at IS NULL
@@ -162,7 +165,7 @@ func (s *DB) ListPhotos(params storage.ListPhotosParams) (*storage.PhotoPage, er
 			return nil, err2
 		}
 		rows, err = s.db.Query(`
-			SELECT id, uuid, original_name, mime_type, size, width, height,
+			SELECT id, uuid, original_name, media_kind, mime_type, size, width, height, duration_ms,
 			       taken_at, uploaded_at, uploaded_by, deleted_at, deleted_by
 			FROM photos
 			WHERE uploaded_by = ? AND deleted_at IS NULL
@@ -192,7 +195,7 @@ func (s *DB) ListTrashedPhotos(params storage.ListPhotosParams) (*storage.PhotoP
 
 	if params.Cursor == "" {
 		rows, err = s.db.Query(`
-			SELECT id, uuid, original_name, mime_type, size, width, height,
+			SELECT id, uuid, original_name, media_kind, mime_type, size, width, height, duration_ms,
 			       taken_at, uploaded_at, uploaded_by, deleted_at, deleted_by
 			FROM photos
 			WHERE uploaded_by = ? AND deleted_at IS NOT NULL
@@ -204,7 +207,7 @@ func (s *DB) ListTrashedPhotos(params storage.ListPhotosParams) (*storage.PhotoP
 			return nil, err2
 		}
 		rows, err = s.db.Query(`
-			SELECT id, uuid, original_name, mime_type, size, width, height,
+			SELECT id, uuid, original_name, media_kind, mime_type, size, width, height, duration_ms,
 			       taken_at, uploaded_at, uploaded_by, deleted_at, deleted_by
 			FROM photos
 			WHERE uploaded_by = ? AND deleted_at IS NOT NULL

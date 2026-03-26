@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"photoalbum/internal/api"
 	"photoalbum/internal/config"
-	"photoalbum/internal/server"
 	"photoalbum/internal/service"
 	"photoalbum/internal/storage/sqlite"
 )
@@ -48,9 +48,7 @@ func main() {
 	defer repo.Close()
 
 	photoService := service.NewPhotoService(repo, cfg.StoragePath)
-	albumService := service.NewAlbumService(repo)
-	shareService := service.NewShareService(repo)
-	app := server.New(cfg, photoService, albumService, shareService, webFS)
+	app := api.NewRouterWithStatic(cfg, webFS, photoService)
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	if host := preferredLANIP(); host != "" {

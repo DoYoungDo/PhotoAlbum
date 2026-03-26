@@ -83,10 +83,12 @@ func (s *PhotoService) Upload(input UploadInput) (*UploadResult, error) {
 	photo := &storage.Photo{
 		UUID:         photoUUID,
 		OriginalName: input.OriginalName,
+		MediaKind:    storage.MediaKindImage,
 		MimeType:     meta.MimeType,
 		Size:         input.Size,
 		Width:        meta.Width,
 		Height:       meta.Height,
+		DurationMS:   0,
 		TakenAt:      meta.TakenAt,
 		UploadedAt:   time.Now(),
 		UploadedBy:   input.UploadedBy,

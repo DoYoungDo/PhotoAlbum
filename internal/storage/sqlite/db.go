@@ -51,8 +51,16 @@ func (s *DB) Close() error {
 
 // migrate 执行数据库建表迁移（幂等）
 func (s *DB) migrate() error {
-	_, err := s.db.Exec(schema)
-	return err
+	if _, err := s.db.Exec(schema); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("photos", "media_kind", `ALTER TABLE photos ADD COLUMN media_kind TEXT NOT NULL DEFAULT 'image'`); err != nil {
+		return err
+	}
+	if err := s.ensureColumn("photos", "duration_ms", `ALTER TABLE photos ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0`); err != nil {
+		return err
+	}
+	return nil
 }
 
 // schema 数据库建表 SQL
@@ -61,10 +69,12 @@ CREATE TABLE IF NOT EXISTS photos (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     uuid          TEXT    NOT NULL UNIQUE,
     original_name TEXT    NOT NULL,
+    media_kind    TEXT    NOT NULL DEFAULT 'image',
     mime_type     TEXT    NOT NULL,
     size          INTEGER NOT NULL,
     width         INTEGER NOT NULL DEFAULT 0,
     height        INTEGER NOT NULL DEFAULT 0,
+    duration_ms   INTEGER NOT NULL DEFAULT 0,
     taken_at      DATETIME NOT NULL,
     uploaded_at   DATETIME NOT NULL,
     uploaded_by   INTEGER  NOT NULL,
@@ -121,3 +131,34 @@ CREATE INDEX IF NOT EXISTS idx_share_links_token
 CREATE INDEX IF NOT EXISTS idx_share_links_created_by
     ON share_links(created_by);
 `
+
+func (s *DB) ensureColumn(table, column, alterSQL string) error {
+	rows, err := s.db.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			dataType   string
+			notNull    int
+			defaultV   any
+			primaryKey int
+		)
+		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultV, &primaryKey); err != nil {
+			return err
+		}
+		if name == column {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	_, err = s.db.Exec(alterSQL)
+	return err
+}

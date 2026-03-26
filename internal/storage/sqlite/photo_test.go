@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,6 +10,8 @@ import (
 	"time"
 
 	"photoalbum/internal/storage"
+
+	_ "modernc.org/sqlite"
 )
 
 // newTestDB 创建测试用内存数据库
@@ -28,10 +31,12 @@ func makePhoto(userID int64, takenAt time.Time) *storage.Photo {
 	return &storage.Photo{
 		UUID:         "uuid-" + takenAt.Format("20060102150405"),
 		OriginalName: "test.jpg",
+		MediaKind:    storage.MediaKindImage,
 		MimeType:     "image/jpeg",
 		Size:         1024,
 		Width:        800,
 		Height:       600,
+		DurationMS:   0,
 		TakenAt:      takenAt,
 		UploadedAt:   time.Now(),
 		UploadedBy:   userID,
@@ -62,6 +67,74 @@ func TestNew_InvalidPath(t *testing.T) {
 	}
 }
 
+func TestNew_MigratesLegacyPhotoColumns(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "legacy.db")
+	raw, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("创建旧数据库失败: %v", err)
+	}
+	_, err = raw.Exec(`
+		CREATE TABLE photos (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			uuid TEXT NOT NULL UNIQUE,
+			original_name TEXT NOT NULL,
+			mime_type TEXT NOT NULL,
+			size INTEGER NOT NULL,
+			width INTEGER NOT NULL DEFAULT 0,
+			height INTEGER NOT NULL DEFAULT 0,
+			taken_at DATETIME NOT NULL,
+			uploaded_at DATETIME NOT NULL,
+			uploaded_by INTEGER NOT NULL,
+			deleted_at DATETIME,
+			deleted_by INTEGER
+		);
+		CREATE TABLE albums (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', cover_photo_id INTEGER, created_by INTEGER NOT NULL, created_at DATETIME NOT NULL);
+		CREATE TABLE album_photos (album_id INTEGER NOT NULL, photo_id INTEGER NOT NULL, added_at DATETIME NOT NULL, PRIMARY KEY (album_id, photo_id));
+		CREATE TABLE share_links (id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT NOT NULL UNIQUE, type TEXT NOT NULL, target_id INTEGER NOT NULL, created_by INTEGER NOT NULL, expires_at DATETIME, created_at DATETIME NOT NULL);
+	`)
+	if err != nil {
+		raw.Close()
+		t.Fatalf("初始化旧 schema 失败: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("关闭旧数据库失败: %v", err)
+	}
+
+	db, err := New(dbPath)
+	if err != nil {
+		t.Fatalf("迁移旧数据库失败: %v", err)
+	}
+	defer db.Close()
+
+	for _, column := range []string{"media_kind", "duration_ms"} {
+		var found bool
+		rows, err := db.db.Query(`PRAGMA table_info(photos)`)
+		if err != nil {
+			t.Fatalf("查询表结构失败: %v", err)
+		}
+		for rows.Next() {
+			var cid int
+			var name string
+			var dataType string
+			var notNull int
+			var defaultValue any
+			var pk int
+			if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &pk); err != nil {
+				rows.Close()
+				t.Fatalf("扫描表结构失败: %v", err)
+			}
+			if name == column {
+				found = true
+			}
+		}
+		rows.Close()
+		if !found {
+			t.Fatalf("迁移后缺少列 %s", column)
+		}
+	}
+}
+
 // --- Photo 测试 ---
 
 func TestSavePhoto_Success(t *testing.T) {
@@ -73,6 +146,37 @@ func TestSavePhoto_Success(t *testing.T) {
 	}
 	if p.ID == 0 {
 		t.Error("保存后 ID 应该被填充")
+	}
+}
+
+func TestSavePhoto_VideoFieldsPersisted(t *testing.T) {
+	db := newTestDB(t)
+	p := &storage.Photo{
+		UUID:         "video-uuid",
+		OriginalName: "demo.mp4",
+		MediaKind:    storage.MediaKindVideo,
+		MimeType:     "video/mp4",
+		Size:         2048,
+		Width:        1920,
+		Height:       1080,
+		DurationMS:   12345,
+		TakenAt:      time.Now(),
+		UploadedAt:   time.Now(),
+		UploadedBy:   1,
+	}
+
+	if err := db.SavePhoto(p); err != nil {
+		t.Fatalf("保存视频失败: %v", err)
+	}
+	got, err := db.GetPhotoByID(p.ID, 1)
+	if err != nil {
+		t.Fatalf("查询视频失败: %v", err)
+	}
+	if got == nil {
+		t.Fatal("应能查询到视频记录")
+	}
+	if got.MediaKind != storage.MediaKindVideo || got.DurationMS != 12345 {
+		t.Fatalf("视频字段未正确持久化: %+v", got)
 	}
 }
 
@@ -234,7 +338,7 @@ func TestSoftDeletePhoto_And_Restore(t *testing.T) {
 func TestHardDeleteTrashedPhotos(t *testing.T) {
 	db := newTestDB(t)
 	p1 := makePhoto(1, time.Now())
-	p2 := &storage.Photo{UUID: "uuid-2", OriginalName: "b.jpg", MimeType: "image/jpeg", Size: 512, TakenAt: time.Now(), UploadedAt: time.Now(), UploadedBy: 1}
+	p2 := &storage.Photo{UUID: "uuid-2", OriginalName: "b.jpg", MediaKind: storage.MediaKindImage, MimeType: "image/jpeg", Size: 512, TakenAt: time.Now(), UploadedAt: time.Now(), UploadedBy: 1}
 	db.SavePhoto(p1)
 	db.SavePhoto(p2)
 	db.SoftDeletePhoto(p1.ID, 1, 1)
